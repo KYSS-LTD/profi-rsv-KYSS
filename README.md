@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.png" alt="Vkatun banner" />
+</p>
+
 # profi-rsv-KYSS
 
 ## 👨‍💻 KYSS
@@ -5,9 +9,9 @@
 ## 👥 Команда:
 - [Маслов Даниил](https://t.me/Danyayokich) ([GitHub](https://github.com/danyayok)) - Капитан команды (Team Lead), Backend Developer
 - [Васильев Артём](https://t.me/avslyv) ([GitHub](https://github.com/avslyv)) - Tech Lead, Product Owner
-- [Ржевский Иван](https://t.me/jeanrezerford) ([GitHub]()) - Frontend Developer
-- [Подколзин Алексей](https://t.me/fillllka) ([GitHub]()) - ML Engineer
-- [Юденков Павел](https://t.me/kitkeyll) ([GitHub]()) - LLM Engineer
+- [Ржевский Иван](https://t.me/jeanrezerford) ([GitHub](https://github.com/BigDuckteams)) - Frontend Developer
+- [Подколзин Алексей](https://t.me/fillllka) ([GitHub](https://github.com/Fosh1er)) - ML Engineer
+- [Юденков Павел](https://t.me/kitkeyll) ([GitHub](https://github.com/kitkey)) - LLM Engineer
 
 ## 💡 Тема
 AI-проджект-менеджер: умный бот-ассистент для командной работы
