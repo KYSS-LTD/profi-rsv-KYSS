@@ -52,6 +52,8 @@ Vite проксирует `/api` на `http://localhost:8000`, поэтому д
 
 ### Запуск одним Docker Compose стеком
 
+Сначала убедитесь в наличии необходимых файлов (package-lock.json)
+А потом:
 ```bash
 docker compose up --build
 ```
