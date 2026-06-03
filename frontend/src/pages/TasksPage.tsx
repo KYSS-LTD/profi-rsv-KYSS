@@ -13,12 +13,11 @@ import {
   Settings2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { formatConfidence, sourceLabel, taskStatusLabel } from '../entities/task/helpers';
+import { sourceLabel, taskStatusLabel } from '../entities/task/helpers';
 import { Task, TaskSource, TaskStatus } from '../entities/task/types';
 import { getTasks, rescheduleTask, updateTaskStatus } from '../shared/api/tasks';
 import { env } from '../shared/config/env';
 import { cn } from '../shared/lib/cn';
-import { formatDateTime } from '../shared/lib/date';
 import { Button } from '../shared/ui/Button';
 import { ErrorState } from '../shared/ui/ErrorState';
 import { Input } from '../shared/ui/Input';

@@ -25,3 +25,8 @@ celerybeat-schedule
 celerybeat.pid
 
 ngrok.exe
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo

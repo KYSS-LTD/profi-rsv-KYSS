@@ -23,3 +23,53 @@ AI-проджект-менеджер: умный бот-ассистент дл�
 ## 📚 Документация
 ### Дополительная документация
 - [Git Flow](git-flow.md)
+## 🚀 Запуск проекта
+
+Проект собран как единый стек: backend отдает REST API с префиксом `/api`, frontend по умолчанию обращается к этому префиксу, а в Docker production-сборка проксирует запросы через nginx.
+
+### Локальная разработка
+
+1. Скопируйте переменные окружения при необходимости:
+   ```bash
+   cp .env.example .env
+   ```
+2. Запустите backend:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+3. Запустите frontend в отдельном терминале:
+   ```bash
+   cd frontend
+   npm ci
+   npm run dev
+   ```
+4. Откройте интерфейс: http://localhost:5173
+
+Vite проксирует `/api` на `http://localhost:8000`, поэтому для обычной разработки не нужно прописывать абсолютный адрес backend. Если backend запущен на другом адресе, задайте `VITE_DEV_API_TARGET` для dev-сервера или `VITE_API_BASE_URL` для сборки.
+
+### Запуск одним Docker Compose стеком
+
+```bash
+docker compose up --build
+```
+
+После запуска доступны:
+
+- frontend: http://localhost:3000
+- backend API: http://localhost:8000/api
+- healthcheck: http://localhost:8000/api/health
+- PostgreSQL: localhost:5432
+- Redis: localhost:6379
+
+### Важные переменные окружения
+
+| Переменная | Назначение | Значение по умолчанию |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | Базовый URL frontend-клиента | `/api` |
+| `VITE_DEV_API_TARGET` | Цель Vite proxy для локальной разработки | `http://localhost:8000` |
+| `CORS_ORIGINS` | Разрешённые origins для backend | `http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000` |
+| `POSTGRES_*` | Подключение к PostgreSQL | см. `.env.example` |
+| `CELERY_*` | Подключение Celery к Redis | см. `.env.example` |

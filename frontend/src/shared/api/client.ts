@@ -20,8 +20,19 @@ export class ApiError extends Error {
   }
 }
 
+function resolveApiUrl(path: string) {
+  const baseUrl = env.apiBaseUrl.endsWith('/') ? env.apiBaseUrl : `${env.apiBaseUrl}/`;
+  const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
+
+  if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) {
+    return new URL(normalizedPath, baseUrl);
+  }
+
+  return new URL(`${baseUrl}${normalizedPath}`, window.location.origin);
+}
+
 export async function apiClient<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const url = new URL(path, env.apiBaseUrl);
+  const url = resolveApiUrl(path);
 
   Object.entries(options.params ?? {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
