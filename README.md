@@ -58,6 +58,14 @@ Vite проксирует `/api` на `http://localhost:8000`, поэтому д
 docker compose up --build
 ```
 
+Перед первым запуском желательно пересоздать package-lock.json прописав:
+
+```bash
+cd frontend
+rm package-lock.json
+npm install
+```
+
 После запуска доступны:
 
 - frontend: http://localhost:3000
