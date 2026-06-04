@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     BOT_TOKEN: str = ""
     OPENAI_API_KEY: str = ""
 
+    KANBAN_PROVIDER: str = "internal"
+    YOUGILE_API_URL: str = "https://yougile.com/api-v2"
+    YOUGILE_API_KEY: str = ""
+    YOUGILE_COLUMN_ID: str = ""
+    TRELLO_API_URL: str = "https://api.trello.com/1"
+    TRELLO_API_KEY: str = ""
+    TRELLO_TOKEN: str = ""
+    TRELLO_LIST_ID: str = ""
+
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 

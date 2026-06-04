@@ -1,139 +1,139 @@
-from fastapi import APIRouter, Body, HTTPException, Query
-from app.demo_data import TASKS, TASK_CANDIDATES, copy_data, now_iso
-from app.schemas import TaskCreate
+from __future__ import annotations
 
-router = APIRouter(
-    prefix="/tasks",
-    tags=["Tasks"],
-)
+from datetime import datetime
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.dependencies import get_db
+from app.models.models import Task
+from app.schemas import RescheduleTaskPayload, TaskCreate, UpdateTaskStatusPayload
+from app.services.task_decision_engine import TaskDecisionEngine
+
+router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 
-def _find_task(task_id: str) -> dict:
-    task = next((item for item in TASKS if str(item["id"]) == str(task_id)), None)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
+def serialize_task(task: Task) -> dict:
+    return {
+        "id": str(task.id),
+        "team_id": task.team_id,
+        "candidate_id": str(task.candidate_id) if task.candidate_id else None,
+        "external_kanban_id": task.external_kanban_id,
+        "external_kanban_url": task.external_kanban_url,
+        "title": task.title,
+        "description": task.description,
+        "assignee": task.assignee.name if task.assignee else task.assignee_raw,
+        "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+        "deadline": task.deadline,
+        "status": task.status,
+        "priority": task.priority,
+        "source": task.source,
+        "confidence": task.confidence,
+        "created_by_ai": task.created_by_ai,
+        "kanban_provider": task.kanban_provider,
+        "source_message_excerpt": task.source_message_excerpt,
+        "created_at": task.created_at,
+        "updated_at": task.updated_at,
+        "closed_at": task.closed_at,
+        "started_at": task.started_at,
+        "last_status_change_at": task.last_status_change_at,
+        "status_changed_count": task.status_changed_count,
+    }
 
 
 @router.get("")
-async def get_tasks(
+def get_tasks(
     team_id: str | None = None,
     assignee_id: str | None = None,
     status: str | None = None,
     source: str | None = None,
+    deadline_from: datetime | None = None,
+    deadline_to: datetime | None = None,
+    db: Session = Depends(get_db),
 ):
-    tasks = TASKS
+    stmt = select(Task).order_by(Task.created_at.desc())
     if team_id:
-        tasks = [task for task in tasks if task.get("team_id") == team_id]
+        stmt = stmt.where(Task.team_id == team_id)
     if assignee_id:
-        tasks = [task for task in tasks if task.get("assignee_id") == assignee_id]
+        if not assignee_id.isdigit():
+            return []
+        stmt = stmt.where(Task.assignee_id == int(assignee_id))
     if status:
-        tasks = [task for task in tasks if task.get("status") == status]
+        stmt = stmt.where(Task.status == status)
     if source:
-        tasks = [task for task in tasks if task.get("source") == source]
-    return copy_data(tasks)
+        stmt = stmt.where(Task.source == source)
+    if deadline_from:
+        stmt = stmt.where(Task.deadline >= deadline_from)
+    if deadline_to:
+        stmt = stmt.where(Task.deadline <= deadline_to)
+    return [serialize_task(task) for task in db.execute(stmt).scalars().all()]
 
 
 @router.post("", status_code=201)
-async def create_task(payload: TaskCreate):
-    task = {
-        "id": f"task_{len(TASKS) + 1}",
-        "team_id": "team_1",
-        "title": payload.title,
-        "description": payload.description,
-        "assignee": None,
-        "assignee_id": None,
-        "deadline": None,
-        "status": "todo",
-        "priority": "medium",
-        "source": "telegram_text",
-        "confidence": None,
-        "created_by_ai": False,
-        "kanban_provider": "internal",
-        "status_changed_count": 0,
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-    }
-    TASKS.append(task)
-    return copy_data(task)
+def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
+    task = Task(title=payload.title, description=payload.description, priority=payload.priority, source="telegram_text", created_by_ai=False)
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return serialize_task(task)
 
 
 @router.get("/my")
-async def get_my_tasks(user_id: str = Query(default="user_ivan")):
-    return copy_data([task for task in TASKS if task.get("assignee_id") == user_id])
+def get_my_tasks(user_id: str = Query(default="1"), db: Session = Depends(get_db)):
+    if not user_id.isdigit():
+        return []
+    return [serialize_task(task) for task in db.execute(select(Task).where(Task.assignee_id == int(user_id))).scalars().all()]
 
 
 @router.patch("/{task_id}/status")
-async def update_task_status(task_id: str, payload: dict = Body(default_factory=dict)):
-    task = _find_task(task_id)
-    old_status = task["status"]
-    new_status = payload.get("status")
-    if not new_status:
-        raise HTTPException(status_code=422, detail="status is required")
-
-    task["status"] = new_status
-    task["updated_at"] = now_iso()
-    task["last_status_change_at"] = task["updated_at"]
-    task["status_changed_count"] = int(task.get("status_changed_count") or 0) + 1
-    if new_status == "done":
-        task["closed_at"] = task["updated_at"]
-
+def update_task_status(task_id: int, payload: UpdateTaskStatusPayload, db: Session = Depends(get_db)):
+    engine = TaskDecisionEngine(db)
+    try:
+        task = engine.update_task_status(task_id, payload.status, source=payload.source, changed_by=payload.changed_by, comment=payload.comment)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {
-        "task_id": task_id,
-        "old_status": old_status,
-        "new_status": new_status,
-        "external_synced": task.get("kanban_provider") == "external",
-        "updated_at": task["updated_at"],
+        "task_id": str(task.id),
+        "old_status": getattr(task, "_previous_status", None),
+        "new_status": task.status,
+        "external_synced": task.kanban_provider == "external",
+        "updated_at": task.updated_at,
     }
 
 
 @router.post("/{task_id}/reschedule")
-async def reschedule_task(task_id: str, payload: dict = Body(default_factory=dict)):
-    task = _find_task(task_id)
-    new_deadline = payload.get("new_deadline")
-    if not new_deadline:
-        raise HTTPException(status_code=422, detail="new_deadline is required")
-
-    task["deadline"] = new_deadline
-    task["updated_at"] = now_iso()
-    return {"task_id": task_id, "deadline": new_deadline, "reminders_rebuilt": True}
+def reschedule_task(task_id: int, payload: RescheduleTaskPayload, db: Session = Depends(get_db)):
+    task = db.get(Task, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    task.deadline = datetime.fromisoformat(str(payload.new_deadline).replace("Z", "+00:00"))
+    db.commit()
+    db.refresh(task)
+    return {"task_id": str(task.id), "deadline": task.deadline, "reminders_rebuilt": True}
 
 
 @router.post("/candidates/{candidate_id}/confirm")
-async def confirm_candidate(candidate_id: str, payload: dict = Body(default_factory=dict)):
-    candidate = next((item for item in TASK_CANDIDATES if item["id"] == candidate_id), None)
-    if candidate is None:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-
-    overrides = payload.get("overrides") or {}
-    candidate["status"] = "confirmed"
-    task = {
-        "id": f"task_from_{candidate_id}",
-        "team_id": candidate.get("team_id", "team_1"),
-        "candidate_id": candidate_id,
-        "title": overrides.get("title") or candidate["title"],
-        "description": overrides.get("description") or candidate.get("description"),
-        "assignee": overrides.get("assignee_raw") or candidate.get("assignee_raw"),
-        "assignee_id": overrides.get("assignee_id") or candidate.get("assignee_id"),
-        "deadline": overrides.get("deadline") or candidate.get("deadline"),
-        "status": "todo",
-        "priority": overrides.get("priority") or candidate.get("priority", "medium"),
-        "source": candidate.get("source", "telegram_text"),
-        "confidence": candidate.get("confidence"),
-        "created_by_ai": True,
-        "kanban_provider": "internal",
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
+def confirm_candidate(candidate_id: int, payload: dict = Body(default_factory=dict), db: Session = Depends(get_db)):
+    engine = TaskDecisionEngine(db)
+    try:
+        task = engine.confirm_candidate(candidate_id, overrides=payload.get("overrides") or {}, confirmed_by=payload.get("confirmed_by") or "dashboard")
+    except ValueError as exc:
+        status_code = 404 if "not found" in str(exc).lower() else 409
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return {
+        "task_id": str(task.id),
+        "external_kanban_id": task.external_kanban_id,
+        "external_kanban_url": task.external_kanban_url,
+        "status": "created",
     }
-    TASKS.append(task)
-    return {"task_id": task["id"], "external_kanban_id": None, "external_kanban_url": None, "status": "created"}
 
 
 @router.post("/candidates/{candidate_id}/reject")
-async def reject_candidate_from_tasks(candidate_id: str, payload: dict = Body(default_factory=dict)):
-    candidate = next((item for item in TASK_CANDIDATES if item["id"] == candidate_id), None)
-    if candidate is None:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    candidate["status"] = "rejected"
-    candidate["reason"] = payload.get("reason") or "other"
-    return {"status": "rejected", "candidate_id": candidate_id}
+def reject_candidate_from_tasks(candidate_id: int, payload: dict = Body(default_factory=dict), db: Session = Depends(get_db)):
+    engine = TaskDecisionEngine(db)
+    try:
+        candidate = engine.reject_candidate(candidate_id, reason=payload.get("reason") or "other", rejected_by=payload.get("rejected_by"))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": candidate.status, "candidate_id": str(candidate.id)}

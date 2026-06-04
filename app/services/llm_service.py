@@ -1,21 +1,10 @@
+from app.services.llm_client import llm_client
+
+
 class LLMService:
-
-    async def extract_tasks(
-        self,
-        text: str,
-    ):
-
-        return {
-            "has_task": True,
-            "tasks": [
-                {
-                    "title": text,
-                    "assignee_raw": None,
-                    "deadline_raw": None,
-                    "confidence": 0.9,
-                }
-            ]
-        }
+    async def extract_tasks(self, text: str):
+        result = await llm_client.extract_tasks(text)
+        return result.model_dump()
 
 
 llm_service = LLMService()
