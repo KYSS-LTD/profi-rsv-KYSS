@@ -1,5 +1,9 @@
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
 from app.demo_data import TASKS, TASK_CANDIDATES, copy_data, now_iso
+from app.dependencies import get_db
+from app.models.models import Task
 from app.schemas import TaskCreate
 
 router = APIRouter(
@@ -21,6 +25,7 @@ async def get_tasks(
     assignee_id: str | None = None,
     status: str | None = None,
     source: str | None = None,
+    db: Session = Depends(get_db),
 ):
     tasks = TASKS
     if team_id:
@@ -31,40 +36,55 @@ async def get_tasks(
         tasks = [task for task in tasks if task.get("status") == status]
     if source:
         tasks = [task for task in tasks if task.get("source") == source]
-    return copy_data(tasks)
+    db_query = db.query(Task)
+    if assignee_id:
+        db_query = db_query.filter(Task.assignee_id == assignee_id)
+    if status:
+        db_query = db_query.filter(Task.status == status)
+    if source:
+        db_query = db_query.filter(Task.source == source)
+    db_tasks = [serialize_db_task(task) for task in db_query.order_by(Task.created_at.desc()).limit(200).all()]
+    all_tasks = copy_data(tasks) + db_tasks
+    return all_tasks
 
 
 @router.post("", status_code=201)
-async def create_task(payload: TaskCreate):
-    task = {
-        "id": f"task_{len(TASKS) + 1}",
-        "team_id": "team_1",
-        "title": payload.title,
-        "description": payload.description,
-        "assignee": None,
-        "assignee_id": None,
-        "deadline": None,
-        "status": "todo",
-        "priority": "medium",
-        "source": "telegram_text",
-        "confidence": None,
-        "created_by_ai": False,
-        "kanban_provider": "internal",
-        "status_changed_count": 0,
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-    }
-    TASKS.append(task)
-    return copy_data(task)
+async def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
+    db_task = Task(
+        title=payload.title,
+        description=payload.description,
+        status="todo",
+        priority="medium",
+        source="telegram_text",
+        created_by_ai=False,
+    )
+    db.add(db_task)
+    db.commit()
+    db.refresh(db_task)
+    return serialize_db_task(db_task)
 
 
 @router.get("/my")
-async def get_my_tasks(user_id: str = Query(default="user_ivan")):
-    return copy_data([task for task in TASKS if task.get("assignee_id") == user_id])
+async def get_my_tasks(user_id: str = Query(default="user_ivan"), db: Session = Depends(get_db)):
+    demo_tasks = copy_data([task for task in TASKS if task.get("assignee_id") == user_id])
+    db_tasks = [serialize_db_task(task) for task in db.query(Task).filter(Task.assignee_id == user_id).all()]
+    return demo_tasks + db_tasks
 
 
 @router.patch("/{task_id}/status")
-async def update_task_status(task_id: str, payload: dict = Body(default_factory=dict)):
+async def update_task_status(task_id: str, payload: dict = Body(default_factory=dict), db: Session = Depends(get_db)):
+    db_id = parse_db_task_id(task_id)
+    db_task = db.query(Task).filter(Task.id == db_id).first() if db_id is not None else None
+    if db_task is not None:
+        old_status = db_task.status
+        new_status = payload.get("status")
+        if not new_status:
+            raise HTTPException(status_code=422, detail="status is required")
+        db_task.status = new_status
+        db.commit()
+        db.refresh(db_task)
+        return {"task_id": task_id, "old_status": old_status, "new_status": new_status, "external_synced": False, "updated_at": db_task.updated_at.isoformat() if db_task.updated_at else now_iso()}
+
     task = _find_task(task_id)
     old_status = task["status"]
     new_status = payload.get("status")
@@ -88,12 +108,20 @@ async def update_task_status(task_id: str, payload: dict = Body(default_factory=
 
 
 @router.post("/{task_id}/reschedule")
-async def reschedule_task(task_id: str, payload: dict = Body(default_factory=dict)):
-    task = _find_task(task_id)
+async def reschedule_task(task_id: str, payload: dict = Body(default_factory=dict), db: Session = Depends(get_db)):
     new_deadline = payload.get("new_deadline")
     if not new_deadline:
         raise HTTPException(status_code=422, detail="new_deadline is required")
 
+    db_id = parse_db_task_id(task_id)
+    db_task = db.query(Task).filter(Task.id == db_id).first() if db_id is not None else None
+    if db_task is not None:
+        db_task.deadline = new_deadline
+        db.commit()
+        db.refresh(db_task)
+        return {"task_id": task_id, "deadline": new_deadline, "reminders_rebuilt": True}
+
+    task = _find_task(task_id)
     task["deadline"] = new_deadline
     task["updated_at"] = now_iso()
     return {"task_id": task_id, "deadline": new_deadline, "reminders_rebuilt": True}
@@ -137,3 +165,29 @@ async def reject_candidate_from_tasks(candidate_id: str, payload: dict = Body(de
     candidate["status"] = "rejected"
     candidate["reason"] = payload.get("reason") or "other"
     return {"status": "rejected", "candidate_id": candidate_id}
+
+
+def parse_db_task_id(task_id: str) -> int | None:
+    raw_id = task_id.removeprefix("db_")
+    return int(raw_id) if raw_id.isdigit() else None
+
+
+def serialize_db_task(task: Task) -> dict:
+    return {
+        "id": f"db_{task.id}",
+        "team_id": "team_1",
+        "candidate_id": str(task.candidate_id) if task.candidate_id else None,
+        "title": task.title,
+        "description": task.description,
+        "assignee": task.assignee,
+        "assignee_id": task.assignee_id,
+        "deadline": task.deadline,
+        "status": task.status,
+        "priority": task.priority,
+        "source": task.source,
+        "confidence": task.confidence,
+        "created_by_ai": task.created_by_ai,
+        "kanban_provider": "internal",
+        "created_at": task.created_at.isoformat() if task.created_at else None,
+        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+    }
