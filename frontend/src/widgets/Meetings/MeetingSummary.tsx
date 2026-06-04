@@ -16,7 +16,7 @@ export function MeetingSummary({ meeting }: { meeting: MeetingSummaryType }) {
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <p className="text-sm text-stone-500">Краткие итоги</p>
-            <h2 className="mt-1 break-words text-2xl font-semibold tracking-tight text-stone-950">{meeting.title ?? meeting.id}</h2>
+            <h2 className="mt-1 break-words text-title font-semibold text-stone-950">{meeting.title ?? meeting.id}</h2>
           </div>
           {meeting.transcript_quality !== undefined && meeting.transcript_quality !== null && (
             <Badge className="w-fit" tone="green">Качество транскрипта {formatConfidence(meeting.transcript_quality)}</Badge>

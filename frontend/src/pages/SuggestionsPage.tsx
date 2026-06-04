@@ -38,7 +38,7 @@ export function SuggestionsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="AI extraction"
+        eyebrow="AI-извлечение"
         title="AI-предложения"
         description="Кандидаты задач со статусом pending: можно подтвердить, отклонить или поправить перед созданием карточки."
       />

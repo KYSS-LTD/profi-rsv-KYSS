@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { Crown } from 'lucide-react';
+import { cn } from '../shared/lib/cn';
 import { getLeaderboard, getTeamAnalytics } from '../shared/api/analytics';
 import { getRoadmapCards } from '../shared/api/knowledge';
 import { Badge } from '../shared/ui/Badge';
@@ -34,18 +36,34 @@ export function AnalyticsPage() {
           {leaderboardQuery.isLoading && <p className="text-sm text-stone-500">Загружаем рейтинг...</p>}
           {leaderboardQuery.data && (
             <div className="space-y-2">
-              {leaderboardQuery.data.map((item, index) => (
-                <div key={item.user_id} className="flex items-center justify-between gap-4 rounded-xl bg-stone-50 px-4 py-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm font-semibold">{index + 1}</span>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-stone-950">{item.name}</p>
-                      <p className="truncate text-sm text-stone-500">{item.level}</p>
+              {leaderboardQuery.data.map((item, index) => {
+                const isTop = index === 0;
+                return (
+                  <div
+                    key={item.user_id}
+                    className={cn(
+                      'flex items-center justify-between gap-4 rounded-xl border px-4 py-3 transition-colors',
+                      isTop ? 'border-brand-200 bg-brand-50' : 'border-transparent bg-stone-50 hover:bg-stone-100',
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span
+                        className={cn(
+                          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold',
+                          isTop ? 'bg-brand-600 text-white shadow-brand-sm' : 'bg-white text-stone-600 ring-1 ring-stone-200',
+                        )}
+                      >
+                        {isTop ? <Crown className="h-4 w-4" /> : index + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-stone-950">{item.name}</p>
+                        <p className="truncate text-sm text-stone-500">{item.level}</p>
+                      </div>
                     </div>
+                    <Badge className="nums shrink-0" tone={isTop ? 'brand' : 'neutral'}>{item.xp} XP</Badge>
                   </div>
-                  <Badge className="shrink-0" tone="blue">{item.xp} XP</Badge>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>

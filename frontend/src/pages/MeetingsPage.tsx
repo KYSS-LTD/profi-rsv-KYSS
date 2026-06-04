@@ -36,7 +36,7 @@ export function MeetingsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Voice / Meeting"
+        eyebrow="Голос / Встречи"
         title="Итоги встречи"
         description="Загрузка аудио, просмотр решений, действий после встречи, рисков, открытых вопросов и задач, созданных из встречи."
       />

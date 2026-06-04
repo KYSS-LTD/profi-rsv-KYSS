@@ -6,8 +6,8 @@ import { TaskCandidate } from '../../entities/candidate/types';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { Card } from '../../shared/ui/Card';
+import { Dropdown } from '../../shared/ui/Dropdown';
 import { Input } from '../../shared/ui/Input';
-import { Select } from '../../shared/ui/Select';
 import { Textarea } from '../../shared/ui/Textarea';
 
 const priorities: TaskPriority[] = ['low', 'medium', 'high', 'critical'];
@@ -67,11 +67,12 @@ export function SuggestionCard({
         </Field>
         <Field label="Приоритет">
           {isEditing ? (
-            <Select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as TaskPriority })}>
-              {priorities.map((priority) => (
-                <option key={priority} value={priority}>{priorityLabel[priority]}</option>
-              ))}
-            </Select>
+            <Dropdown
+              ariaLabel="Приоритет"
+              value={draft.priority}
+              onChange={(value) => setDraft({ ...draft, priority: value as TaskPriority })}
+              options={priorities.map((priority) => ({ value: priority, label: priorityLabel[priority] }))}
+            />
           ) : (
             <span>{priorityLabel[draft.priority]}</span>
           )}

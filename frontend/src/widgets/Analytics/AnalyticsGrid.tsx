@@ -1,4 +1,4 @@
-import { Bot, CheckCircle2, Clock, Mic, TimerReset, TrendingUp } from 'lucide-react';
+import { Bot, CalendarCheck, CalendarClock, CheckCircle2, Clock, ListChecks, Mic, TimerReset, TrendingUp } from 'lucide-react';
 import { TeamAnalytics } from '../../entities/analytics/types';
 import { formatConfidence } from '../../entities/task/helpers';
 import { MetricCard } from './MetricCard';
@@ -15,9 +15,9 @@ export function AnalyticsGrid({ analytics }: { analytics: TeamAnalytics }) {
       <MetricCard label="Отклонено" value={analytics.rejected_suggestions ?? analytics.ai_quality?.rejected_suggestions ?? 0} note="Отклоненные AI-предложения" icon={<TimerReset className="h-5 w-5" />} />
       <MetricCard label="Голос обработан" value={analytics.voice_messages_processed ?? 0} note="Voice messages / ASR" icon={<Mic className="h-5 w-5" />} />
       <MetricCard label="Средняя точность" value={formatConfidence(avgConfidence)} note="Уверенность AI extraction" icon={<TrendingUp className="h-5 w-5" />} />
-      <MetricCard label="Встреч обработано" value={analytics.meetings_summarized ?? 0} note="Meeting summary" />
-      <MetricCard label="Готово за неделю" value={analytics.team_velocity?.done_this_week ?? analytics.done_tasks ?? 0} note="Закрытые задачи" />
-      <MetricCard label="Просрочки" value={`${analytics.team_velocity?.overdue_percent ?? 0}%`} note="Доля просроченных задач" />
+      <MetricCard label="Встреч обработано" value={analytics.meetings_summarized ?? 0} note="Meeting summary" icon={<CalendarCheck className="h-5 w-5" />} />
+      <MetricCard label="Готово за неделю" value={analytics.team_velocity?.done_this_week ?? analytics.done_tasks ?? 0} note="Закрытые задачи" icon={<ListChecks className="h-5 w-5" />} />
+      <MetricCard label="Просрочки" value={`${analytics.team_velocity?.overdue_percent ?? 0}%`} note="Доля просроченных задач" icon={<CalendarClock className="h-5 w-5" />} />
     </div>
   );
 }

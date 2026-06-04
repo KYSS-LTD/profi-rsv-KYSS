@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kyss-frontend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "--port", "5173"],
+      "cwd": "frontend",
+      "port": 5173,
+      "env": {
+        "VITE_USE_MOCKS": "true"
+      }
+    }
+  ]
+}

@@ -14,9 +14,14 @@ export function PageHeader({
   return (
     <div className="mb-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
       <div className="min-w-0">
-        {eyebrow && <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-stone-400">{eyebrow}</p>}
-        <h1 className="text-balance text-3xl font-semibold tracking-tight text-stone-950 md:text-4xl">{title}</h1>
-        {description && <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-500">{description}</p>}
+        {eyebrow && (
+          <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand-100 bg-brand-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+            {eyebrow}
+          </span>
+        )}
+        <h1 className="text-balance text-display font-bold text-gradient-ink">{title}</h1>
+        {description && <p className="mt-4 max-w-2xl text-base leading-relaxed text-stone-500">{description}</p>}
       </div>
       {actions && <div className="min-w-0">{actions}</div>}
     </div>

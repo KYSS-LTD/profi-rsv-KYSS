@@ -5,7 +5,7 @@ import { formatDateTime } from '../../shared/lib/date';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { Card } from '../../shared/ui/Card';
-import { Select } from '../../shared/ui/Select';
+import { Dropdown } from '../../shared/ui/Dropdown';
 
 const priorityTone = {
   low: 'neutral',
@@ -67,16 +67,16 @@ export function TaskCard({
       )}
 
       <div className="grid gap-3">
-        <Select
+        <Dropdown
+          ariaLabel="Изменить статус задачи"
           value={task.status}
           disabled={isUpdating}
-          onChange={(event) => onStatusChange(task.id, event.target.value as TaskStatus)}
-          aria-label="Изменить статус задачи"
-        >
-          {(['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled'] satisfies TaskStatus[]).map((status) => (
-            <option key={status} value={status}>{taskStatusLabel[status]}</option>
-          ))}
-        </Select>
+          onChange={(value) => onStatusChange(task.id, value as TaskStatus)}
+          options={(['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled'] satisfies TaskStatus[]).map((status) => ({
+            value: status,
+            label: taskStatusLabel[status],
+          }))}
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <Button className="w-full" variant="secondary" disabled={isUpdating} onClick={() => onStatusChange(task.id, 'in_progress')}>

@@ -19,7 +19,7 @@ function DigestCell({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl bg-stone-50 p-4">
       <p className="text-sm text-stone-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-stone-950">{value}</p>
+      <p className="nums mt-2 font-display text-3xl font-bold leading-none text-stone-950">{value}</p>
     </div>
   );
 }
