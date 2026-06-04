@@ -1,5 +1,10 @@
-from fastapi import APIRouter, Body, HTTPException
-from app.demo_data import ACHIEVEMENTS, NOTES, PROFILE, RECOMMENDATIONS, TASKS, copy_data, now_iso
+from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.api.tasks import serialize_db_task
+from app.demo_data import ACHIEVEMENTS, NOTES, PROFILE, RECOMMENDATIONS, copy_data, now_iso
+from app.dependencies import get_db
+from app.models.models import Task
 
 router = APIRouter(tags=["Profile"])
 
@@ -10,14 +15,17 @@ async def get_profile():
 
 
 @router.get("/users/{user_id}/digest")
-async def get_user_digest(user_id: str):
-    user_tasks = [task for task in TASKS if task.get("assignee_id") == user_id]
+async def get_user_digest(user_id: str, db: Session = Depends(get_db)):
+    user_tasks = [serialize_db_task(task) for task in db.query(Task).filter(Task.assignee_id == user_id).all()]
+    if not user_tasks:
+        user_tasks = [serialize_db_task(task) for task in db.query(Task).filter(Task.assignee == PROFILE["name"]).all()]
+    upcoming = [serialize_db_task(task) for task in db.query(Task).filter(Task.status != "done").order_by(Task.created_at.desc()).limit(3).all()]
     return {
         "user_id": user_id,
-        "date": "2026-06-03",
-        "tasks_today": copy_data(user_tasks),
+        "date": now_iso()[:10],
+        "tasks_today": user_tasks,
         "overdue_tasks": [],
-        "upcoming_deadlines": copy_data([task for task in TASKS if task.get("status") != "done"][:3]),
+        "upcoming_deadlines": upcoming,
     }
 
 
