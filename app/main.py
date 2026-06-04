@@ -10,6 +10,9 @@ from app.api.profile import router as profile_router
 from app.api.tasks import router as tasks_router
 from app.api.telegram import router as telegram_router
 from app.core.config import settings
+from app.core.database import Base, engine
+from app.core.schema import ensure_telegram_bigint_columns
+from app.models import models as _models  # noqa: F401
 
 app = FastAPI(
     title="Komandus API",
@@ -40,3 +43,10 @@ for router in api_routers:
 
 for router in api_routers:
     app.include_router(router)
+
+
+@app.on_event("startup")
+def create_database_tables() -> None:
+    if settings.AUTO_CREATE_TABLES:
+        Base.metadata.create_all(bind=engine)
+        ensure_telegram_bigint_columns(engine)
