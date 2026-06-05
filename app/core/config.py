@@ -50,7 +50,9 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_SECONDS: int = _get_int("ACCESS_TOKEN_EXPIRE_SECONDS", 900)
     REFRESH_TOKEN_EXPIRE_SECONDS: int = _get_int("REFRESH_TOKEN_EXPIRE_SECONDS", 604800)
     YOUGILE_API_BASE_URL: str = os.getenv("YOUGILE_API_BASE_URL", "https://ru.yougile.com/api-v2")
+    APP_PUBLIC_URL: str | None = os.getenv("APP_PUBLIC_URL")
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    TELEGRAM_BOT_USERNAME: str | None = os.getenv("TELEGRAM_BOT_USERNAME")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/2")
 
     LLM_PROCESSING_ENABLED: bool = _get_bool("LLM_PROCESSING_ENABLED", False)
@@ -76,6 +78,16 @@ class Settings:
             f"{self.POSTGRES_PORT}/"
             f"{self.POSTGRES_DB}"
         )
+
+    @property
+    def public_app_url(self) -> str | None:
+        value = (self.APP_PUBLIC_URL or "").strip().rstrip("/")
+        return value or None
+
+    @property
+    def telegram_bot_url(self) -> str | None:
+        username = (self.TELEGRAM_BOT_USERNAME or "").strip().lstrip("@")
+        return f"https://t.me/{username}" if username else None
 
     @property
     def cors_origins_list(self) -> list[str]:

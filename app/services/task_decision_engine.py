@@ -7,6 +7,8 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.audit.services import AuditService
+from app.auth.magic import MagicLoginService
 from app.common.enums import ConfirmationStatus, TaskStatus
 from app.models.models import Employee, KomandusTask, Message, Notification, OrganizationChat, TaskCandidate, TaskConfirmation, TelegramAccountLink, TelegramChat, TelegramConnectCode
 from app.services.kanban_adapter import KanbanAdapter
@@ -20,6 +22,7 @@ class TaskDecisionEngine:
         self.db = db
         self.kanban = KanbanAdapter(db)
         self.telegram = TelegramService()
+        self.audit = AuditService(db)
 
     async def process_update(self, payload: dict):
         if payload.get("message"):
@@ -138,6 +141,8 @@ class TaskDecisionEngine:
             return await self._connect_chat(msg, args[0].strip() if args else "")
         if command == "/start":
             return await self._link_employee(msg)
+        if command == "/login":
+            return await self._login_command(msg)
         if command in {"/tasks", "/today", "/stats", "/help"}:
             return await self._employee_command(msg, command)
         return None
@@ -177,7 +182,11 @@ class TaskDecisionEngine:
     async def _link_employee(self, msg: dict):
         sender = msg.get("from") or {}
         username = sender.get("username")
-        chat_id = (msg.get("chat") or {}).get("id")
+        chat = msg.get("chat") or {}
+        chat_id = chat.get("id")
+        if chat.get("type") != "private":
+            await self._send_message(chat_id, "Для безопасного входа откройте личный чат с ботом и выполните /start.")
+            return {"status": "not_linked", "reason": "not_private_chat"}
         if not username:
             await self._send_message(chat_id, "Не вижу ваш Telegram username. Добавьте username в Telegram и повторите /start.")
             return {"status": "not_linked", "reason": "missing_username"}
@@ -197,8 +206,8 @@ class TaskDecisionEngine:
             photos = profile.get("result", {}).get("photos") or []
             if photos and photos[0]:
                 employee.avatar_url = photos[0][-1].get("file_id")
-        except TelegramDeliveryError:
-            employee.avatar_url = employee.avatar_url
+        except TelegramDeliveryError as exc:
+            self.audit.log(action="Telegram Delivery Failed", organization_id=employee.organization_id, entity_type="Employee", entity_id=employee.id, metadata={"error": str(exc), "flow": "get_user_profile"})
         link = self.db.query(TelegramAccountLink).filter(TelegramAccountLink.organization_id == employee.organization_id, TelegramAccountLink.employee_id == employee.id).first()
         if not link:
             link = TelegramAccountLink(organization_id=employee.organization_id, employee_id=employee.id, telegram_id=sender.get("id"), telegram_username=normalized, is_active=True)
@@ -209,17 +218,48 @@ class TaskDecisionEngine:
             link.is_active = True
         self.db.add(Notification(organization_id=employee.organization_id, employee_id=employee.id, type="employee_connected", title="Сотрудник подключил Telegram", body=employee.full_name))
         self.db.commit()
-        invite = f"Ваш аккаунт успешно подключен.\n\nВойти: {settings.FRONTEND_URL}\nEmail: {employee.email or 'уточните у менеджера'}\nПароль: {employee.generated_password or 'выдан менеджером'}\n\nПосле первого входа система попросит сменить пароль."
-        markup = {"inline_keyboard": [[{"text": "Войти в систему", "url": settings.FRONTEND_URL}]]}
-        await self._send_message(chat_id, invite, reply_markup=markup)
+        await self._send_employee_login(employee, chat_id)
+        await self._send_message(chat_id, self._telegram_menu_text())
         return {"status": "linked", "employee_id": str(employee.id)}
+
+    async def _login_command(self, msg: dict):
+        chat = msg.get("chat") or {}
+        chat_id = chat.get("id")
+        if chat.get("type") != "private":
+            await self._send_message(chat_id, "Для безопасного входа выполните /login в личном чате с ботом.")
+            return {"status": "not_sent", "reason": "not_private_chat"}
+        sender = msg.get("from") or {}
+        employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
+        if not employee:
+            await self._send_message(chat_id, "Сначала подключите аккаунт командой /start.")
+            return {"status": "not_linked"}
+        await self._send_employee_login(employee, chat_id)
+        return {"status": "magic_login_sent", "employee_id": str(employee.id)}
+
+    async def _send_employee_login(self, employee: Employee, chat_id: int | None):
+        magic_url = None
+        if employee.user_id:
+            token = MagicLoginService(self.db).create_token(employee.user_id)
+            magic_url = MagicLoginService(self.db).build_magic_login_url(token.token)
+        if employee.telegram_id:
+            try:
+                await self.telegram.send_magic_login(employee, magic_url)
+            except TelegramDeliveryError as exc:
+                self.audit.log(action="Telegram Delivery Failed", organization_id=employee.organization_id, entity_type="Employee", entity_id=employee.id, metadata={"error": str(exc), "flow": "magic_login"})
+                raise
+        else:
+            fallback = "Ваш аккаунт создан.\n\nДля входа обратитесь к администратору."
+            await self._send_message(chat_id, fallback)
+
+    def _telegram_menu_text(self) -> str:
+        return "Меню Командус:\n\n📋 Мои задачи\n📅 Сегодня\n📈 Моя статистика\n🔔 Напоминания\n🤖 Спросить AI\n⚙️ Настройки"
 
     async def _employee_command(self, msg: dict, command: str):
         chat_id = (msg.get("chat") or {}).get("id")
         sender = msg.get("from") or {}
         employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
         if command == "/help":
-            text = "/tasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/stats — личная статистика\n/help — команды"
+            text = "/tasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/stats — личная статистика\n/login — новая ссылка для входа\n/help — команды"
         elif not employee:
             text = "Сначала подключите аккаунт командой /start."
         else:
@@ -359,7 +399,11 @@ class TaskDecisionEngine:
     async def _send_message(self, chat_id: int | None, text: str, reply_markup: dict | None = None):
         if chat_id is None:
             raise TelegramDeliveryError("Cannot send Telegram message: chat_id is missing.")
-        return await self.telegram.send_message(chat_id, text, reply_markup=reply_markup)
+        try:
+            return await self.telegram.send_message(chat_id, text, reply_markup=reply_markup)
+        except TelegramDeliveryError as exc:
+            self.audit.log(action="Telegram Delivery Failed", entity_type="TelegramMessage", entity_id=str(chat_id), metadata={"error": str(exc)})
+            raise
 
     async def _get_chat_member_count(self, chat_id: int | None) -> int | None:
         if chat_id is None:

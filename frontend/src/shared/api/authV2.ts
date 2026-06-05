@@ -2,7 +2,7 @@ import { CurrentUser } from '../../entities/saas/types';
 import { clearAccessToken, setAccessToken } from '../auth/token';
 import { apiClient } from './client';
 
-type TokenResponse = { access_token: string; token_type: 'bearer' };
+type TokenResponse = { access_token: string; token_type: 'bearer'; must_change_password?: boolean };
 
 export type SetupStatusResponse = { initialized: boolean };
 
@@ -12,6 +12,22 @@ export type SetupRequest = {
   email: string;
   password: string;
 };
+
+export async function magicLogin(token: string) {
+  const response = await apiClient<TokenResponse>('/v2/auth/magic-login', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+  setAccessToken(response.access_token);
+  return response;
+}
+
+export async function changePassword(newPassword: string) {
+  return apiClient<{ status: string }>('/v2/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword }),
+  });
+}
 
 export async function login(email: string, password: string) {
   const response = await apiClient<TokenResponse>('/v2/auth/login', {

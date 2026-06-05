@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+import logging
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException
@@ -9,6 +12,8 @@ from fastapi import HTTPException
 from app.core.config import settings
 from app.models.models import Employee, KomandusTask
 from app.monitoring.metrics import increment
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramDeliveryError(RuntimeError):
@@ -29,22 +34,28 @@ class TelegramService:
 
     async def _request(self, method: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.api_base_url}/bot{self.bot_token}/{method}"
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(url, json=payload or {})
-                data = response.json()
-                response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(url, json=payload or {})
+                    data = response.json()
+                    response.raise_for_status()
+                if not data.get("ok"):
+                    raise TelegramDeliveryError(f"Telegram API {method} failed: {data.get('description', 'unknown error')}")
+                return data
+            except httpx.HTTPStatusError as exc:
+                detail = self._extract_error(exc.response)
+                last_error = TelegramDeliveryError(f"Telegram API {method} failed: {detail}")
+            except TelegramDeliveryError as exc:
+                last_error = exc
+            except Exception as exc:
+                last_error = TelegramDeliveryError(f"Telegram API {method} failed: {exc}")
             increment("telegram_send_errors_total")
-            detail = self._extract_error(exc.response)
-            raise TelegramDeliveryError(f"Telegram API {method} failed: {detail}") from exc
-        except Exception as exc:
-            increment("telegram_send_errors_total")
-            raise TelegramDeliveryError(f"Telegram API {method} failed: {exc}") from exc
-        if not data.get("ok"):
-            increment("telegram_send_errors_total")
-            raise TelegramDeliveryError(f"Telegram API {method} failed: {data.get('description', 'unknown error')}")
-        return data
+            logger.warning("Telegram API %s failed on attempt %s/3: %s", method, attempt + 1, last_error)
+            if attempt < 2:
+                await asyncio.sleep(2 ** attempt)
+        raise last_error or TelegramDeliveryError(f"Telegram API {method} failed")
 
     def _extract_error(self, response: httpx.Response) -> str:
         try:
@@ -57,8 +68,9 @@ class TelegramService:
         payload: dict[str, Any] = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
         if parse_mode:
             payload["parse_mode"] = parse_mode
-        if reply_markup:
-            payload["reply_markup"] = reply_markup
+        safe_markup = self._sanitize_reply_markup(reply_markup)
+        if safe_markup:
+            payload["reply_markup"] = safe_markup
         return await self._request("sendMessage", payload)
 
     async def send_html_message(self, chat_id: int | str, html: str, reply_markup: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -81,30 +93,22 @@ class TelegramService:
             f"<b>Источник:</b> Telegram {task.source_chat_id or '—'}\n"
             f"<b>Дедлайн:</b> {task.due_at.isoformat() if task.due_at else '—'}"
         )
-        markup = {
-            "inline_keyboard": [
-                [
-                    {"text": "✅ Принять", "callback_data": f"task_accept:{task.id}"},
-                    {"text": "❌ Отказаться", "callback_data": f"task_reject:{task.id}"},
-                ],
-                [{"text": "💬 Уточнить", "callback_data": f"task_clarify:{task.id}"}],
-            ]
-        }
+        markup = {"inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"task_accept:{task.id}"}, {"text": "❌ Отказаться", "callback_data": f"task_reject:{task.id}"}], [{"text": "💬 Уточнить", "callback_data": f"task_clarify:{task.id}"}]]}
         return await self.send_html_message(employee.telegram_id, text, reply_markup=markup)
 
-    async def send_login_credentials(self, employee: Employee, frontend_url: str | None = None) -> dict[str, Any]:
+    async def send_magic_login(self, employee: Employee, magic_url: str | None) -> dict[str, Any]:
         if not employee.telegram_id:
             raise TelegramDeliveryError(f"Employee {employee.id} has no telegram_user_id. Cannot send direct message until /start is completed.")
-        login_url = frontend_url or settings.FRONTEND_URL
-        text = (
-            "Здравствуйте.\n\n"
-            "Ваш аккаунт создан.\n\n"
-            f"Email: {employee.email or 'уточните у менеджера'}\n"
-            f"Пароль: {employee.generated_password or 'выдан менеджером'}\n"
-            f"Войти: {login_url}"
-        )
-        markup = {"inline_keyboard": [[{"text": "Войти в систему", "url": login_url}]]}
+        if not magic_url or not self.is_allowed_button_url(magic_url):
+            logger.error("APP_PUBLIC_URL is missing or invalid; sending Telegram login fallback without button for employee %s", employee.id)
+            return await self.send_message(employee.telegram_id, "Ваш аккаунт создан.\n\nДля входа обратитесь к администратору.")
+        first_name = employee.telegram_first_name or (employee.full_name.split()[0] if employee.full_name else "")
+        text = f"Здравствуйте, {first_name}.\n\nВаш аккаунт в Командус готов.\n\nНажмите кнопку ниже для входа."
+        markup = {"inline_keyboard": [[{"text": "Войти в Командус", "url": magic_url}]]}
         return await self.send_message(employee.telegram_id, text, reply_markup=markup)
+
+    async def send_login_credentials(self, employee: Employee, frontend_url: str | None = None) -> dict[str, Any]:
+        return await self.send_magic_login(employee, frontend_url)
 
     async def send_reminder(self, employee: Employee, task: KomandusTask, reminder_label: str) -> dict[str, Any]:
         if not employee.telegram_id:
@@ -143,8 +147,9 @@ class TelegramService:
 
     async def edit_message_text(self, chat_id: int | str, message_id: int, text: str, reply_markup: dict[str, Any] | None = None, parse_mode: str | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"chat_id": chat_id, "message_id": message_id, "text": text}
-        if reply_markup:
-            payload["reply_markup"] = reply_markup
+        safe_markup = self._sanitize_reply_markup(reply_markup)
+        if safe_markup:
+            payload["reply_markup"] = safe_markup
         if parse_mode:
             payload["parse_mode"] = parse_mode
         return await self._request("editMessageText", payload)
@@ -154,6 +159,34 @@ class TelegramService:
         if secret_token:
             payload["secret_token"] = secret_token
         return await self._request("setWebhook", payload)
+
+    def is_allowed_button_url(self, url: str) -> bool:
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            return False
+        public_url = settings.public_app_url
+        if not public_url:
+            return False
+        public = urlparse(public_url)
+        return parsed.netloc.lower() == public.netloc.lower()
+
+    def _sanitize_reply_markup(self, reply_markup: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not reply_markup:
+            return reply_markup
+        keyboard = reply_markup.get("inline_keyboard")
+        if not isinstance(keyboard, list):
+            return reply_markup
+        sanitized_rows = []
+        for row in keyboard:
+            sanitized_row = []
+            for button in row:
+                if isinstance(button, dict) and "url" in button and not self.is_allowed_button_url(str(button["url"])):
+                    logger.error("Dropping invalid Telegram inline button URL: %s", button.get("url"))
+                    continue
+                sanitized_row.append(button)
+            if sanitized_row:
+                sanitized_rows.append(sanitized_row)
+        return {**reply_markup, "inline_keyboard": sanitized_rows} if sanitized_rows else None
 
     def http_exception(self, exc: TelegramDeliveryError) -> HTTPException:
         return HTTPException(status_code=502, detail=str(exc))

@@ -144,6 +144,18 @@ class User(Base, TimestampMixin):
     refresh_token_hash: Mapped[str | None] = mapped_column(String(128))
 
 
+class LoginToken(Base):
+    __tablename__ = "login_tokens"
+    __table_args__ = (UniqueConstraint("token", name="uq_login_token_token"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = uuid_fk("users.id")
+    token: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class Employee(Base, TimestampMixin):
     __tablename__ = "employees"
 

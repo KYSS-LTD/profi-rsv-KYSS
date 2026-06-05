@@ -10,6 +10,8 @@ import { SetupWizardPage } from '../pages/SetupWizardPage';
 import { BoardsPage } from '../pages/BoardsPage';
 import { EmployeesPage } from '../pages/EmployeesPage';
 import { LoginPage } from '../pages/LoginPage';
+import { MagicLoginPage } from '../pages/MagicLoginPage';
+import { ChangePasswordPage } from '../pages/ChangePasswordPage';
 import { MeetingsPage } from '../pages/MeetingsPage';
 import { ProfilePage } from '../pages/ProfilePage';
 import { SaasTasksPage } from '../pages/SaasTasksPage';
@@ -17,6 +19,7 @@ import { SuggestionsPage } from '../pages/SuggestionsPage';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  { path: '/auth/magic-login', element: <MagicLoginPage /> },
   {
     element: <ProtectedRoute />,
     children: [
@@ -37,6 +40,7 @@ export const router = createBrowserRouter([
           { path: 'notifications', element: <NotificationsPage /> },
           { path: 'setup', element: <SetupWizardPage /> },
           { path: 'profile', element: <ProfilePage /> },
+          { path: 'auth/change-password', element: <ChangePasswordPage /> },
         ],
       },
     ],
