@@ -1,4 +1,5 @@
 from uuid import UUID
+import asyncio
 import secrets
 import string
 from fastapi import HTTPException
@@ -9,6 +10,7 @@ from app.common.security import hash_password
 from app.employees.repositories import EmployeeRepository
 from app.employees.schemas import EmployeeCreate, EmployeeUpdate
 from app.models.models import Employee, TelegramAccountLink, User, Department, Team
+from app.telegram.service import TelegramDeliveryError, TelegramService
 
 
 class EmployeeService:
@@ -16,6 +18,7 @@ class EmployeeService:
         self.db = db
         self.repo = EmployeeRepository(db)
         self.audit = AuditService(db)
+        self.telegram = TelegramService()
 
     def list(self, user):
         return self.repo.list_for_org(user.organization_id)
@@ -42,6 +45,8 @@ class EmployeeService:
             )
             self.db.add(db_user)
             self.db.flush()
+        normalized_username = self._normalize_username(payload.telegram_username)
+        known_link = self.db.query(TelegramAccountLink).filter(TelegramAccountLink.organization_id == user.organization_id, TelegramAccountLink.telegram_username == normalized_username, TelegramAccountLink.is_active.is_(True)).first() if normalized_username else None
         employee = Employee(
             organization_id=user.organization_id,
             user_id=db_user.id if db_user else None,
@@ -51,11 +56,16 @@ class EmployeeService:
             department_id=payload.department_id,
             team_id=payload.team_id,
             position=payload.position,
-            telegram_username=self._normalize_username(payload.telegram_username),
-            telegram_status="PENDING",
+            telegram_username=normalized_username,
+            telegram_status="CONNECTED" if known_link else "PENDING",
+            telegram_id=known_link.telegram_id if known_link else None,
             generated_password=password if email else None,
         )
         self.repo.save(employee)
+        if known_link:
+            known_link.employee_id = employee.id
+            self.db.commit()
+            self._send_login_credentials(employee)
         self.audit.log(action="Create Employee", organization_id=user.organization_id, user_id=user.id, entity_type="Employee", entity_id=employee.id, metadata={"role": employee.role, "department_id": str(employee.department_id) if employee.department_id else None})
         return employee
 
@@ -89,26 +99,36 @@ class EmployeeService:
         return employee
 
     def deactivate(self, employee_id: UUID, user):
+        return self._set_active(employee_id, user, False, "Deactivate Employee")
+
+    def activate(self, employee_id: UUID, user):
+        return self._set_active(employee_id, user, True, "Activate Employee")
+
+    def restore(self, employee_id: UUID, user):
+        return self._set_active(employee_id, user, True, "Restore Employee")
+
+    def delete(self, employee_id: UUID, user):
+        employee = self._set_active(employee_id, user, False, "Soft Delete Employee")
+        return {"status": "deactivated", "id": str(employee.id)}
+
+    def _set_active(self, employee_id: UUID, user, active: bool, action: str):
         employee = self.repo.get_for_org(employee_id, user.organization_id, user.role)
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found")
-        employee.is_active = False
+        employee.is_active = active
         if employee.user_id:
             db_user = self.db.query(User).filter(User.id == employee.user_id).first()
             if db_user:
-                db_user.is_active = False
+                db_user.is_active = active
         self.repo.save(employee)
-        self.audit.log(action="Update Employee", organization_id=employee.organization_id, user_id=user.id, entity_type="Employee", entity_id=employee.id, metadata={"is_active": False})
+        self.audit.log(action=action, organization_id=employee.organization_id, user_id=user.id, entity_type="Employee", entity_id=employee.id, metadata={"is_active": active})
         return employee
 
-    def delete(self, employee_id: UUID, user):
-        employee = self.repo.get_for_org(employee_id, user.organization_id, user.role)
-        if not employee:
-            raise HTTPException(status_code=404, detail="Employee not found")
-        org_id = employee.organization_id
-        self.repo.delete(employee)
-        self.audit.log(action="Delete Employee", organization_id=org_id, user_id=user.id, entity_type="Employee", entity_id=employee_id)
-        return {"status": "deleted"}
+    def _send_login_credentials(self, employee: Employee) -> None:
+        try:
+            asyncio.run(self.telegram.send_login_credentials(employee))
+        except TelegramDeliveryError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     def _validate_department_team(self, organization_id, department_id, team_id):
         if department_id and not self.db.query(Department).filter(Department.id == department_id, Department.organization_id == organization_id).first():

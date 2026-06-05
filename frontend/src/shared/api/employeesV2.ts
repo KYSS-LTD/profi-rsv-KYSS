@@ -27,6 +27,14 @@ export function deactivateEmployee(id: string) {
   return apiClient<Employee>(`/v2/employees/${id}/deactivate`, { method: 'POST' });
 }
 
+export function activateEmployee(id: string) {
+  return apiClient<Employee>(`/v2/employees/${id}/activate`, { method: 'POST' });
+}
+
+export function restoreEmployee(id: string) {
+  return apiClient<Employee>(`/v2/employees/${id}/restore`, { method: 'POST' });
+}
+
 export function deleteEmployee(id: string) {
   return apiClient<{ status: string }>(`/v2/employees/${id}`, { method: 'DELETE' });
 }

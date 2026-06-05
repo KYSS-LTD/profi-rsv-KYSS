@@ -32,6 +32,16 @@ def deactivate_employee(employee_id: UUID, current_user=Depends(RoleChecker(Role
     return EmployeeService(db).deactivate(employee_id, current_user)
 
 
-@router.delete("/{employee_id}", summary="Delete employee", description="Delete an employee record. Manager role required.")
+@router.post("/{employee_id}/activate", response_model=EmployeeResponse, summary="Activate employee", description="Reactivate an employee and their user account. Manager role required.")
+def activate_employee(employee_id: UUID, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
+    return EmployeeService(db).activate(employee_id, current_user)
+
+
+@router.post("/{employee_id}/restore", response_model=EmployeeResponse, summary="Restore employee", description="Alias for activation after soft deletion. Manager role required.")
+def restore_employee(employee_id: UUID, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
+    return EmployeeService(db).restore(employee_id, current_user)
+
+
+@router.delete("/{employee_id}", summary="Soft delete employee", description="Soft-delete an employee by setting is_active=false. Manager role required.")
 def delete_employee(employee_id: UUID, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
     return EmployeeService(db).delete(employee_id, current_user)

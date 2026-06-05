@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import asyncio
 from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -8,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.audit.services import AuditService
 from app.common.enums import ConfirmationStatus, TaskStatus
 from app.common.state_machine import assert_valid_transition
-from app.models.models import KomandusTask, TaskConfirmation
+from app.models.models import Employee, KomandusTask, TaskConfirmation
+from app.telegram.service import TelegramDeliveryError, TelegramService
 from app.monitoring.metrics import increment
 from app.tasks.repositories import V2TaskRepository
 from app.tasks.schemas import V2TaskCreate
@@ -19,6 +21,7 @@ class V2TaskService:
         self.db = db
         self.repo = V2TaskRepository(db)
         self.audit = AuditService(db)
+        self.telegram = TelegramService()
 
     def list(self, user):
         return self.repo.list_for_user(user)
@@ -26,6 +29,7 @@ class V2TaskService:
     def create_manual(self, payload: V2TaskCreate, user):
         task = KomandusTask(organization_id=user.organization_id, employee_id=payload.employee_id, department_id=payload.department_id, team_id=payload.team_id, title=payload.title, description=payload.description, due_at=payload.due_at, status=TaskStatus.TO_DO.value)
         self.repo.save(task)
+        self._send_task_confirmation_if_possible(task)
         self.audit.log(action="Create Task", organization_id=user.organization_id, user_id=user.id, entity_type="Task", entity_id=task.id)
         return task
 
@@ -33,10 +37,22 @@ class V2TaskService:
         status = TaskStatus.ACCEPTED.value if confidence >= 0.85 else TaskStatus.PENDING_CONFIRMATION.value
         task = KomandusTask(organization_id=organization_id, employee_id=employee_id, department_id=department_id, team_id=team_id, organization_chat_id=organization_chat_id, title=title, description=description, source_chat_id=source_chat_id, source_message_id=source_message_id, llm_confidence=confidence, llm_model=llm_model, extraction_version=extraction_version, status=status, ai_summary=description, source_excerpt=source_excerpt or description)
         self.repo.save(task)
+        self._send_task_confirmation_if_possible(task)
         confirmation = TaskConfirmation(organization_id=organization_id, task_id=task.id, employee_id=employee_id, status=ConfirmationStatus.PENDING.value)
         self.db.add(confirmation); self.db.commit()
         increment("task_detection_total")
         return task
+
+    def _send_task_confirmation_if_possible(self, task: KomandusTask) -> None:
+        if not task.employee_id:
+            return
+        employee = self.db.query(Employee).filter(Employee.id == task.employee_id, Employee.is_active.is_(True)).first()
+        if not employee or not employee.telegram_id:
+            return
+        try:
+            asyncio.run(self.telegram.send_task_confirmation(employee, task))
+        except TelegramDeliveryError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     def change_status(self, task_id: UUID, new_status: TaskStatus, user):
         task = self.repo.get_scoped(task_id, user.organization_id, user.role)

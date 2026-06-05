@@ -161,6 +161,7 @@ class Employee(Base, TimestampMixin):
     telegram_last_name: Mapped[str | None] = mapped_column(String(255))
     avatar_url: Mapped[str | None] = mapped_column(String(1024))
     telegram_status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    telegram_connected_at: Mapped[datetime | None] = mapped_column(DateTime)
     generated_password: Mapped[str | None] = mapped_column(String(128))
     telegram_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

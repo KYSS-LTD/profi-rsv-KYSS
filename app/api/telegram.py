@@ -1,12 +1,15 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Body
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.common.enums import Role
+from app.common.rbac import RoleChecker
 from app.dependencies import get_db
 from app.models.models import Message, TaskCandidate
 from app.schemas import TelegramWebhook
 from app.services.task_decision_engine import TaskDecisionEngine
 from app.tasks.tasks import process_telegram_message
+from app.telegram.service import TelegramService
 
 router = APIRouter(
     prefix="/telegram",
@@ -23,6 +26,12 @@ async def telegram_webhook(payload: TelegramWebhook, db: Session = Depends(get_d
     except Exception:
         result = await TaskDecisionEngine(db).process_update(update)
         return {"status": "accepted", "mode": "inline", "result": result}
+
+
+@router.post("/webhook/setup")
+async def setup_telegram_webhook(url: str = Body(...), secret_token: str | None = Body(default=None), current_user=Depends(RoleChecker(Role.MANAGER))):
+    result = await TelegramService().set_webhook(url, secret_token=secret_token)
+    return {"status": "configured", "telegram": result}
 
 
 @router.get("/chats/{chat_id}/messages")

@@ -58,7 +58,8 @@ export type Employee = {
   telegram_first_name?: string | null;
   telegram_last_name?: string | null;
   avatar_url?: string | null;
-  telegram_status: 'PENDING' | 'CONNECTED' | string;
+  telegram_status: 'PENDING' | 'CONNECTED' | 'NOT_FOUND' | string;
+  telegram_connected_at?: string | null;
   telegram_id?: number | null;
   generated_password?: string | null;
   is_active: boolean;

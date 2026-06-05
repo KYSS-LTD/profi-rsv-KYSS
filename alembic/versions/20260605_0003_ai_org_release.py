@@ -29,7 +29,7 @@ def upgrade() -> None:
         op.add_column("employees", sa.Column(column, uuid_type))
     op.create_foreign_key("fk_employees_department_id_departments", "employees", "departments", ["department_id"], ["id"])
     op.create_foreign_key("fk_employees_team_id_teams", "employees", "teams", ["team_id"], ["id"])
-    for name, type_ in [("position", sa.String(255)), ("telegram_username", sa.String(255)), ("telegram_first_name", sa.String(255)), ("telegram_last_name", sa.String(255)), ("avatar_url", sa.String(1024)), ("telegram_status", sa.String(32)), ("generated_password", sa.String(128))]:
+    for name, type_ in [("position", sa.String(255)), ("telegram_username", sa.String(255)), ("telegram_first_name", sa.String(255)), ("telegram_last_name", sa.String(255)), ("avatar_url", sa.String(1024)), ("telegram_status", sa.String(32)), ("telegram_connected_at", sa.DateTime()), ("generated_password", sa.String(128))]:
         op.add_column("employees", sa.Column(name, type_, nullable=False if name == "telegram_status" else True, server_default="PENDING" if name == "telegram_status" else None))
     for name in ["department_id", "team_id", "organization_chat_id"]:
         op.add_column("komandus_tasks", sa.Column(name, uuid_type))
@@ -42,7 +42,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     for column in ["source_excerpt", "ai_summary", "organization_chat_id", "team_id", "department_id"]:
         op.drop_column("komandus_tasks", column)
-    for column in ["generated_password", "telegram_status", "avatar_url", "telegram_last_name", "telegram_first_name", "telegram_username", "position", "team_id", "department_id"]:
+    for column in ["generated_password", "telegram_connected_at", "telegram_status", "avatar_url", "telegram_last_name", "telegram_first_name", "telegram_username", "position", "team_id", "department_id"]:
         op.drop_column("employees", column)
     for column in ["must_change_password", "team_id", "department_id"]:
         op.drop_column("users", column)

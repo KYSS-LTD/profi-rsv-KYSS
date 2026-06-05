@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, Field
 from uuid import UUID
 
@@ -40,6 +41,7 @@ class EmployeeResponse(BaseModel):
     telegram_last_name: str | None
     avatar_url: str | None
     telegram_status: str
+    telegram_connected_at: datetime | None
     telegram_id: int | None
     generated_password: str | None
     is_active: bool

@@ -19,4 +19,7 @@ class TaskResponse(BaseModel):
 class TelegramWebhook(BaseModel):
     update_id: int
     message: Optional[Dict[str, Any]] = None
+    edited_message: Optional[Dict[str, Any]] = None
     callback_query: Optional[Dict[str, Any]] = None
+    chat_member: Optional[Dict[str, Any]] = None
+    my_chat_member: Optional[Dict[str, Any]] = None
