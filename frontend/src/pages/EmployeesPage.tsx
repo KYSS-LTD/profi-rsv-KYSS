@@ -46,7 +46,7 @@ export function EmployeesPage() {
     mutationFn: () => createEmployee({ full_name: fullName, email: email || null, role, department_id: departmentId || null, team_id: teamId || null, position: position || null, telegram_username: telegramUsername || null }),
     onSuccess: (employee) => {
       setFullName(''); setEmail(''); setRole('EMPLOYEE'); setDepartmentId(''); setTeamId(''); setPosition(''); setTelegramUsername('');
-      setInvite(`Здравствуйте! Ваш аккаунт Командус создан.\nВойти: ${window.location.origin}\nEmail: ${employee.email}\nПароль: ${employee.generated_password}\nНапишите боту /start для привязки Telegram.`);
+      setInvite(employee.invitation_text || `Откройте Telegram-бота Командус.\n1. Откройте бота.\n2. Выполните /start.\n3. Получите ссылку для входа.`);
       invalidate();
     },
   });
@@ -94,8 +94,8 @@ function EmployeeCard({ employee, department, team, onActivate, onDeactivate, on
   const status = telegramStatus(employee);
   return <Card className={!employee.is_active ? 'opacity-60' : ''}>
     <div className="flex items-start gap-4"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-100 text-lg font-semibold text-stone-700">{employee.full_name.slice(0, 1)}</div><div className="min-w-0 flex-1"><h3 className="truncate text-lg font-semibold text-stone-950">{employee.full_name}</h3><p className="truncate text-sm text-stone-500">{employee.position || 'Должность не указана'}</p><p className="mt-1 flex items-center gap-1 truncate text-sm text-stone-500"><AtSign className="h-3.5 w-3.5" />{employee.telegram_username || employee.email}</p></div><Badge tone={status.tone}>{status.label}</Badge></div>
-    <div className="mt-5 grid gap-3 sm:grid-cols-2"><Info label="Роль" value={roleLabel[employee.role]} /><Info label="Отдел" value={department} /><Info label="Команда" value={team} /><Info label="Telegram ID" value={employee.telegram_id ? String(employee.telegram_id) : '—'} /><Info label="Подключен" value={employee.telegram_connected_at ? new Date(employee.telegram_connected_at).toLocaleString('ru-RU') : '—'} /><Info label="Активность" value={employee.is_active ? 'Активен' : 'Деактивирован'} /></div>
-    <div className="mt-5 flex flex-wrap gap-2">{employee.is_active ? <Button variant="secondary" onClick={onDeactivate}>Деактивировать</Button> : <Button variant="secondary" onClick={onActivate}>Активировать</Button>}<Button variant="secondary" onClick={onRestore}><RotateCcw className="h-4 w-4" />Восстановить</Button><Button variant="danger" onClick={onDelete}><Trash2 className="h-4 w-4" />Удалить</Button></div>
+    <div className="mt-5 grid gap-3 sm:grid-cols-2"><Info label="Роль" value={roleLabel[employee.role]} /><Info label="Отдел" value={department} /><Info label="Команда" value={team} /><Info label="Username" value={employee.telegram_username || '—'} /><Info label="Статус Telegram" value={status.label} /><Info label="Telegram ID" value={employee.telegram_id ? String(employee.telegram_id) : '—'} /><Info label="Подключен" value={employee.telegram_connected_at ? new Date(employee.telegram_connected_at).toLocaleString('ru-RU') : '—'} /><Info label="Активность" value={employee.is_active ? 'Активен' : 'Деактивирован'} /></div>
+    <div className="mt-5 flex flex-wrap gap-2">{employee.is_active ? <Button variant="secondary" onClick={onDeactivate}>Деактивировать</Button> : <Button variant="secondary" onClick={onActivate}>Активировать</Button>}<Button variant="secondary" onClick={onRestore}><RotateCcw className="h-4 w-4" />Восстановить</Button><Button variant="secondary" onClick={() => navigator.clipboard.writeText(employee.invitation_text || '')}><Copy className="h-4 w-4" />Скопировать приглашение</Button><Button variant="danger" onClick={onDelete}><Trash2 className="h-4 w-4" />Удалить</Button></div>
   </Card>;
 }
 

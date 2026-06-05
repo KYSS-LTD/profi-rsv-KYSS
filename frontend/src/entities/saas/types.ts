@@ -6,6 +6,7 @@ export type CurrentUser = {
   email: string;
   full_name?: string | null;
   role: Role;
+  must_change_password?: boolean;
 };
 
 export type Department = {
@@ -62,6 +63,7 @@ export type Employee = {
   telegram_connected_at?: string | null;
   telegram_id?: number | null;
   generated_password?: string | null;
+  invitation_text?: string | null;
   is_active: boolean;
 };
 
