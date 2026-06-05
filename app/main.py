@@ -18,6 +18,7 @@ from app.boards.routers import router as boards_v2_router
 from app.tasks.routers import router as tasks_v2_router
 from app.analytics.routers import router as analytics_v2_router
 from app.monitoring.routers import router as monitoring_router
+from app.setup.routers import router as setup_v2_router
 from app.core.database import Base, engine
 from app.core.schema import ensure_telegram_bigint_columns
 from app.models import models as _models  # noqa: F401
@@ -37,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-api_v2_routers = (auth_v2_router, employees_v2_router, boards_v2_router, tasks_v2_router, analytics_v2_router, monitoring_router)
+api_v2_routers = (auth_v2_router, setup_v2_router, employees_v2_router, boards_v2_router, tasks_v2_router, analytics_v2_router, monitoring_router)
 
 api_routers = (
     health_router,
