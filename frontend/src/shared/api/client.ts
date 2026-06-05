@@ -1,4 +1,5 @@
 import { env } from '../config/env';
+import { getAccessToken } from '../auth/token';
 
 type RequestOptions = RequestInit & {
   params?: Record<string, string | number | boolean | undefined | null>;
@@ -47,7 +48,13 @@ export async function apiClient<T>(path: string, options: RequestOptions = {}): 
     headers.set('Content-Type', 'application/json');
   }
 
+  const token = getAccessToken();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   const response = await fetch(url, {
+    credentials: 'include',
     ...options,
     headers,
   });
