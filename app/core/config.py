@@ -50,6 +50,7 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_SECONDS: int = _get_int("ACCESS_TOKEN_EXPIRE_SECONDS", 900)
     REFRESH_TOKEN_EXPIRE_SECONDS: int = _get_int("REFRESH_TOKEN_EXPIRE_SECONDS", 604800)
     YOUGILE_API_BASE_URL: str = os.getenv("YOUGILE_API_BASE_URL", "https://ru.yougile.com/api-v2")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/2")
 
     LLM_PROCESSING_ENABLED: bool = _get_bool("LLM_PROCESSING_ENABLED", False)

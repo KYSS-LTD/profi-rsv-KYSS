@@ -5,7 +5,10 @@ export type EmployeePayload = {
   full_name: string;
   email?: string | null;
   role: Role;
-  telegram_id?: number | null;
+  department_id?: string | null;
+  team_id?: string | null;
+  position?: string | null;
+  telegram_username?: string | null;
 };
 
 export function getEmployees() {

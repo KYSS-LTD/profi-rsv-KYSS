@@ -21,17 +21,17 @@ class V2TaskService:
         self.audit = AuditService(db)
 
     def list(self, user):
-        return self.repo.list_for_org(user.organization_id)
+        return self.repo.list_for_user(user)
 
     def create_manual(self, payload: V2TaskCreate, user):
-        task = KomandusTask(organization_id=user.organization_id, employee_id=payload.employee_id, title=payload.title, description=payload.description, due_at=payload.due_at, status=TaskStatus.TO_DO.value)
+        task = KomandusTask(organization_id=user.organization_id, employee_id=payload.employee_id, department_id=payload.department_id, team_id=payload.team_id, title=payload.title, description=payload.description, due_at=payload.due_at, status=TaskStatus.TO_DO.value)
         self.repo.save(task)
         self.audit.log(action="Create Task", organization_id=user.organization_id, user_id=user.id, entity_type="Task", entity_id=task.id)
         return task
 
-    def create_from_llm(self, *, organization_id, employee_id, title, description, source_chat_id, source_message_id, confidence, llm_model, extraction_version):
+    def create_from_llm(self, *, organization_id, employee_id, title, description, source_chat_id, source_message_id, confidence, llm_model, extraction_version, department_id=None, team_id=None, organization_chat_id=None, source_excerpt=None):
         status = TaskStatus.ACCEPTED.value if confidence >= 0.85 else TaskStatus.PENDING_CONFIRMATION.value
-        task = KomandusTask(organization_id=organization_id, employee_id=employee_id, title=title, description=description, source_chat_id=source_chat_id, source_message_id=source_message_id, llm_confidence=confidence, llm_model=llm_model, extraction_version=extraction_version, status=status)
+        task = KomandusTask(organization_id=organization_id, employee_id=employee_id, department_id=department_id, team_id=team_id, organization_chat_id=organization_chat_id, title=title, description=description, source_chat_id=source_chat_id, source_message_id=source_message_id, llm_confidence=confidence, llm_model=llm_model, extraction_version=extraction_version, status=status, ai_summary=description, source_excerpt=source_excerpt or description)
         self.repo.save(task)
         confirmation = TaskConfirmation(organization_id=organization_id, task_id=task.id, employee_id=employee_id, status=ConfirmationStatus.PENDING.value)
         self.db.add(confirmation); self.db.commit()

@@ -80,7 +80,7 @@ class Task(Base):
 
 # --- Komandus v2 SaaS models ---
 import uuid
-from sqlalchemy import Boolean, DateTime, Float, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 
@@ -106,6 +106,28 @@ class Organization(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
+
+
+class Department(Base, TimestampMixin):
+    __tablename__ = "departments"
+    __table_args__ = (UniqueConstraint("organization_id", "name", name="uq_department_org_name"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+
+
+class Team(Base, TimestampMixin):
+    __tablename__ = "teams"
+    __table_args__ = (UniqueConstraint("department_id", "name", name="uq_team_department_name"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    department_id: Mapped[uuid.UUID] = uuid_fk("departments.id")
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+
 class User(Base, TimestampMixin):
     __tablename__ = "users"
 
@@ -115,6 +137,9 @@ class User(Base, TimestampMixin):
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
     full_name: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="EMPLOYEE", nullable=False)
+    department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     refresh_token_hash: Mapped[str | None] = mapped_column(String(128))
 
@@ -128,6 +153,15 @@ class Employee(Base, TimestampMixin):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(320), index=True)
     role: Mapped[str] = mapped_column(String(32), default="EMPLOYEE", nullable=False)
+    department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
+    position: Mapped[str | None] = mapped_column(String(255))
+    telegram_username: Mapped[str | None] = mapped_column(String(255), index=True)
+    telegram_first_name: Mapped[str | None] = mapped_column(String(255))
+    telegram_last_name: Mapped[str | None] = mapped_column(String(255))
+    avatar_url: Mapped[str | None] = mapped_column(String(1024))
+    telegram_status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    generated_password: Mapped[str | None] = mapped_column(String(128))
     telegram_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -143,6 +177,39 @@ class TelegramAccountLink(Base, TimestampMixin):
     telegram_username: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+
+
+
+class OrganizationChat(Base):
+    __tablename__ = "organization_chats"
+    __table_args__ = (UniqueConstraint("organization_id", "telegram_chat_id", name="uq_org_chat_telegram_id"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    telegram_chat_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    chat_type: Mapped[str | None] = mapped_column(String(64))
+    members_count: Mapped[int | None] = mapped_column(Integer)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    ai_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    bot_is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    connected_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class TelegramConnectCode(Base):
+    __tablename__ = "telegram_connect_codes"
+    __table_args__ = (UniqueConstraint("code", name="uq_telegram_connect_code"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 class BoardIntegration(Base, TimestampMixin):
     __tablename__ = "board_integrations"
@@ -189,6 +256,9 @@ class KomandusTask(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = uuid_pk()
     organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
     employee_id: Mapped[uuid.UUID | None] = uuid_fk("employees.id", nullable=True)
+    department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
+    organization_chat_id: Mapped[uuid.UUID | None] = uuid_fk("organization_chats.id", nullable=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), default="DETECTED", nullable=False)
@@ -203,6 +273,8 @@ class KomandusTask(Base, TimestampMixin):
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime)
+    ai_summary: Mapped[str | None] = mapped_column(Text)
+    source_excerpt: Mapped[str | None] = mapped_column(Text)
 
 
 class TaskConfirmation(Base, TimestampMixin):
@@ -216,6 +288,22 @@ class TaskConfirmation(Base, TimestampMixin):
     decline_reason: Mapped[str | None] = mapped_column(Text)
     responded_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+
+
+
+class Notification(Base, TimestampMixin):
+    __tablename__ = "notifications"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    user_id: Mapped[uuid.UUID | None] = uuid_fk("users.id", nullable=True)
+    employee_id: Mapped[uuid.UUID | None] = uuid_fk("employees.id", nullable=True)
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str | None] = mapped_column(Text)
+    entity_type: Mapped[str | None] = mapped_column(String(64))
+    entity_id: Mapped[str | None] = mapped_column(String(64))
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 class ProfileNote(Base, TimestampMixin):
     __tablename__ = "profile_notes"

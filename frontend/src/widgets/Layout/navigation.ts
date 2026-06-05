@@ -1,11 +1,13 @@
-import { BarChart3, Bot, CalendarDays, KanbanSquare, PlugZap, UserRound, UsersRound } from 'lucide-react';
+import { BarChart3, Bell, Bot, Building2, KanbanSquare, LayoutDashboard, PlugZap, Settings, UsersRound } from 'lucide-react';
 
 export const navigation = [
-  { to: '/tasks', label: 'Задачи', description: 'Источник истины', icon: KanbanSquare },
-  { to: '/employees', label: 'Сотрудники', description: 'RBAC и Telegram', icon: UsersRound },
-  { to: '/boards', label: 'Интеграции', description: 'YouGile sync', icon: PlugZap },
-  { to: '/suggestions', label: 'AI-предложения', description: 'Подтверждение задач', icon: Bot },
-  { to: '/meetings', label: 'Встречи', description: 'Итоги и действия', icon: CalendarDays },
-  { to: '/analytics', label: 'Аналитика', description: 'Метрики компании', icon: BarChart3 },
-  { to: '/profile', label: 'Профиль', description: 'Моя рабочая зона', icon: UserRound },
+  { to: '/dashboard', label: 'Dashboard', description: 'Картина компании', icon: LayoutDashboard },
+  { to: '/ai-inbox', label: 'Входящие AI', description: 'Подтверждение задач', icon: Bot },
+  { to: '/tasks', label: 'Задачи', description: 'Kanban Командуса', icon: KanbanSquare },
+  { to: '/employees', label: 'Команда', description: 'Сотрудники и роли', icon: UsersRound },
+  { to: '/departments', label: 'Отделы', description: 'Оргструктура', icon: Building2 },
+  { to: '/analytics', label: 'Аналитика', description: 'Реальные метрики', icon: BarChart3 },
+  { to: '/boards', label: 'Интеграции', description: 'Telegram / YouGile / OpenAI', icon: PlugZap },
+  { to: '/notifications', label: 'Уведомления', description: 'События и риски', icon: Bell },
+  { to: '/setup', label: 'Настройки', description: 'Setup Wizard', icon: Settings },
 ];

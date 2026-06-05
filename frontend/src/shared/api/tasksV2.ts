@@ -5,6 +5,8 @@ export type CreateTaskV2Payload = {
   title: string;
   description?: string | null;
   employee_id?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
   due_at?: string | null;
 };
 
@@ -22,4 +24,8 @@ export function moveKomandusTask(id: string, status: TaskStatusV2) {
 
 export function confirmKomandusTask(id: string, approved: boolean, reason?: string) {
   return apiClient<KomandusTask>(`/v2/tasks/${id}/confirm`, { method: 'POST', body: JSON.stringify({ approved, reason }) });
+}
+
+export function askAIAssistant(question: string) {
+  return apiClient<{ answer: string; facts: string[] }>('/v2/analytics/assistant', { method: 'POST', body: JSON.stringify({ question }) });
 }

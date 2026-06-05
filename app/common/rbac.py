@@ -10,6 +10,7 @@ ROLE_ORDER = {
     Role.VIEWER: 10,
     Role.EMPLOYEE: 20,
     Role.PRODUCT_MANAGER: 30,
+    Role.DEPARTMENT_MANAGER: 35,
     Role.MANAGER: 40,
     Role.SUPER_ADMIN: 100,
 }

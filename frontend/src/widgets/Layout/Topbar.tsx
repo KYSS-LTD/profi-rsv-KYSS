@@ -1,4 +1,4 @@
-import { LogOut, ShieldCheck } from 'lucide-react';
+import { Bell, LogOut, ShieldCheck } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../app/auth';
 import { cn } from '../../shared/lib/cn';
@@ -16,11 +16,12 @@ export function Topbar() {
           <img src="/logo.svg" alt="Командус" className="h-9 w-9 rounded-xl lg:hidden" />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-stone-950 lg:hidden">Командус</p>
-            <p className="hidden truncate text-sm text-stone-500 lg:block">Организация: {user?.organization_id.slice(0, 8)} · {user?.email}</p>
+            <p className="hidden truncate text-sm text-stone-500 lg:block">{user?.email} · {user?.role}</p>
           </div>
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <Button variant="ghost" className="h-9 px-3"><Bell className="h-4 w-4" />3</Button>
           <Badge tone="green"><ShieldCheck className="mr-1 h-3.5 w-3.5" />{user?.role ?? 'RBAC'}</Badge>
           <Button variant="ghost" className="h-9 px-3" onClick={() => logout()}><LogOut className="h-4 w-4" />Выйти</Button>
         </div>
