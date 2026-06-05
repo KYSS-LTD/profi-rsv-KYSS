@@ -9,3 +9,7 @@ python-dotenv
 redis
 celery
 httpx
+
+cryptography
+email-validator
+structlog

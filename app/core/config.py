@@ -46,6 +46,11 @@ class Settings:
 
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "change-me-in-production")
+    ACCESS_TOKEN_EXPIRE_SECONDS: int = _get_int("ACCESS_TOKEN_EXPIRE_SECONDS", 900)
+    REFRESH_TOKEN_EXPIRE_SECONDS: int = _get_int("REFRESH_TOKEN_EXPIRE_SECONDS", 604800)
+    YOUGILE_API_BASE_URL: str = os.getenv("YOUGILE_API_BASE_URL", "https://ru.yougile.com/api-v2")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/2")
 
     LLM_PROCESSING_ENABLED: bool = _get_bool("LLM_PROCESSING_ENABLED", False)
     LLM_PROCESSING_PATH: str = os.getenv("LLM_PROCESSING_PATH", "LLMProcessing")

@@ -1,0 +1,1 @@
+"""Komandus module."""

@@ -77,3 +77,179 @@ class Task(Base):
     confidence: Mapped[float | None]
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# --- Komandus v2 SaaS models ---
+import uuid
+from sqlalchemy import Boolean, DateTime, Float, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
+
+def uuid_pk():
+    return mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+
+def uuid_fk(target: str, *, nullable: bool = False):
+    return mapped_column(PG_UUID(as_uuid=True), ForeignKey(target), nullable=nullable, index=True)
+
+
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class Organization(Base, TimestampMixin):
+    __tablename__ = "organizations"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class User(Base, TimestampMixin):
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    full_name: Mapped[str | None] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(32), default="EMPLOYEE", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    refresh_token_hash: Mapped[str | None] = mapped_column(String(128))
+
+
+class Employee(Base, TimestampMixin):
+    __tablename__ = "employees"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    user_id: Mapped[uuid.UUID | None] = uuid_fk("users.id", nullable=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320), index=True)
+    role: Mapped[str] = mapped_column(String(32), default="EMPLOYEE", nullable=False)
+    telegram_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class TelegramAccountLink(Base, TimestampMixin):
+    __tablename__ = "telegram_account_links"
+    __table_args__ = (UniqueConstraint("organization_id", "telegram_id", name="uq_org_telegram_id"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    employee_id: Mapped[uuid.UUID] = uuid_fk("employees.id")
+    telegram_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, nullable=False)
+    telegram_username: Mapped[str | None] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class BoardIntegration(Base, TimestampMixin):
+    __tablename__ = "board_integrations"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    provider: Mapped[str] = mapped_column(String(32), default="yougile", nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    encrypted_api_token: Mapped[str] = mapped_column(Text, nullable=False)
+    external_project_id: Mapped[str | None] = mapped_column(String(255))
+    external_board_id: Mapped[str | None] = mapped_column(String(255))
+    webhook_secret_hash: Mapped[str | None] = mapped_column(String(128))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+
+class ColumnMapping(Base, TimestampMixin):
+    __tablename__ = "column_mappings"
+    __table_args__ = (UniqueConstraint("board_integration_id", "task_status", name="uq_board_status_mapping"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    board_integration_id: Mapped[uuid.UUID] = uuid_fk("board_integrations.id")
+    task_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    external_column_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    external_column_name: Mapped[str | None] = mapped_column(String(255))
+
+
+class EmployeeBoardMapping(Base, TimestampMixin):
+    __tablename__ = "employee_board_mappings"
+    __table_args__ = (UniqueConstraint("board_integration_id", "employee_id", name="uq_employee_board_mapping"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    board_integration_id: Mapped[uuid.UUID] = uuid_fk("board_integrations.id")
+    employee_id: Mapped[uuid.UUID] = uuid_fk("employees.id")
+    external_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    external_email: Mapped[str | None] = mapped_column(String(320))
+
+
+class KomandusTask(Base, TimestampMixin):
+    __tablename__ = "komandus_tasks"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    employee_id: Mapped[uuid.UUID | None] = uuid_fk("employees.id", nullable=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="DETECTED", nullable=False)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime)
+    source_chat_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE)
+    source_message_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE)
+    llm_confidence: Mapped[float | None] = mapped_column(Float)
+    llm_model: Mapped[str | None] = mapped_column(String(128))
+    extraction_version: Mapped[str | None] = mapped_column(String(64))
+    external_task_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    external_task_url: Mapped[str | None] = mapped_column(String(1024))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class TaskConfirmation(Base, TimestampMixin):
+    __tablename__ = "task_confirmations"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    task_id: Mapped[uuid.UUID] = uuid_fk("komandus_tasks.id")
+    employee_id: Mapped[uuid.UUID | None] = uuid_fk("employees.id", nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    decline_reason: Mapped[str | None] = mapped_column(Text)
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID | None] = uuid_fk("organizations.id", nullable=True)
+    user_id: Mapped[uuid.UUID | None] = uuid_fk("users.id", nullable=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(64))
+    entity_id: Mapped[str | None] = mapped_column(String(64))
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ProcessedWebhookEvent(Base):
+    __tablename__ = "processed_webhook_events"
+    __table_args__ = (UniqueConstraint("provider", "event_id", name="uq_provider_event"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AnalyticsSnapshot(Base):
+    __tablename__ = "analytics_snapshots"
+    __table_args__ = (UniqueConstraint("organization_id", "snapshot_date", "kind", name="uq_snapshot_kind_date"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    snapshot_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

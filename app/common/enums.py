@@ -1,0 +1,27 @@
+from enum import StrEnum
+
+
+class Role(StrEnum):
+    SUPER_ADMIN = "SUPER_ADMIN"
+    MANAGER = "MANAGER"
+    PRODUCT_MANAGER = "PRODUCT_MANAGER"
+    EMPLOYEE = "EMPLOYEE"
+    VIEWER = "VIEWER"
+
+
+class TaskStatus(StrEnum):
+    DETECTED = "DETECTED"
+    PENDING_CONFIRMATION = "PENDING_CONFIRMATION"
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    TO_DO = "TO_DO"
+    IN_PROGRESS = "IN_PROGRESS"
+    REVIEW = "REVIEW"
+    DONE = "DONE"
+    OVERDUE = "OVERDUE"
+
+
+class ConfirmationStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    DECLINED = "DECLINED"
