@@ -1,8 +1,14 @@
+import { Task } from '../../entities/task/types';
 import { Achievement, Note, Recommendation, UserDigest, UserProfile } from '../../entities/user/types';
 import { apiClient, ApiListResponse, unwrapItems } from './client';
 
 export async function getProfile() {
   return apiClient<UserProfile>('/profile/me');
+}
+
+export async function getProfileTasks() {
+  const response = await apiClient<ApiListResponse<Task>>('/profile/me/tasks');
+  return unwrapItems(response);
 }
 
 export async function getUserDigest(userId: string) {
