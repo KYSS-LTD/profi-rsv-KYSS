@@ -19,6 +19,7 @@ import { getTasks, rescheduleTask, updateTaskStatus } from '../shared/api/tasks'
 import { env } from '../shared/config/env';
 import { cn } from '../shared/lib/cn';
 import { Button } from '../shared/ui/Button';
+import { EmptyState } from '../shared/ui/EmptyState';
 import { ErrorState } from '../shared/ui/ErrorState';
 import { Input } from '../shared/ui/Input';
 import { Loader } from '../shared/ui/Loader';
@@ -44,86 +45,6 @@ const assigneeInitials: Record<string, string> = {
   Артём: 'А',
   Павел: 'П',
 };
-
-const demoRowsFallback: Task[] = [
-  {
-    id: 'demo_1',
-    title: 'Интеграция Telegram бота с API',
-    assignee: 'Алексей',
-    deadline: '2026-05-20T18:00:00+03:00',
-    status: 'in_progress',
-    priority: 'high',
-    source: 'telegram_text',
-    confidence: 0.92,
-    created_by_ai: true,
-    kanban_provider: 'external',
-    external_kanban_url: 'https://kanban.example/card/demo_1',
-  },
-  {
-    id: 'demo_2',
-    title: 'Обновить пайплайн обработки голоса',
-    assignee: 'Мария',
-    deadline: '2026-05-21T18:00:00+03:00',
-    status: 'todo',
-    priority: 'medium',
-    source: 'telegram_voice',
-    confidence: 0.74,
-    created_by_ai: true,
-    kanban_provider: 'external',
-    external_kanban_url: 'https://kanban.example/card/demo_2',
-  },
-  {
-    id: 'demo_3',
-    title: 'Подготовить отчёт по встрече с клиентом',
-    assignee: 'Иван',
-    deadline: '2026-05-18T18:00:00+03:00',
-    status: 'review',
-    priority: 'critical',
-    source: 'meeting_audio',
-    confidence: 0.9,
-    created_by_ai: true,
-    kanban_provider: 'external',
-    external_kanban_url: 'https://kanban.example/card/demo_3',
-  },
-  {
-    id: 'demo_4',
-    title: 'Создать дашборд по метрикам',
-    assignee: 'Дарья',
-    deadline: '2026-05-23T18:00:00+03:00',
-    status: 'in_progress',
-    priority: 'medium',
-    source: 'meeting_audio',
-    confidence: 0.76,
-    created_by_ai: true,
-    kanban_provider: 'internal',
-  },
-  {
-    id: 'demo_5',
-    title: 'Добавить экспорт в PDF',
-    assignee: 'Артём',
-    deadline: '2026-05-25T18:00:00+03:00',
-    status: 'todo',
-    priority: 'low',
-    source: 'telegram_text',
-    confidence: 0.52,
-    created_by_ai: true,
-    kanban_provider: 'external',
-    external_kanban_url: 'https://kanban.example/card/demo_5',
-  },
-  {
-    id: 'demo_6',
-    title: 'Настроить уведомления о задачах',
-    assignee: 'Алексей',
-    deadline: '2026-05-15T18:00:00+03:00',
-    status: 'done',
-    priority: 'medium',
-    source: 'meeting_audio',
-    confidence: 0.88,
-    created_by_ai: true,
-    kanban_provider: 'external',
-    external_kanban_url: 'https://kanban.example/card/demo_6',
-  },
-];
 
 type SourceFilter = 'all' | TaskSource;
 type StatusFilter = 'all' | TaskStatus;
@@ -172,8 +93,7 @@ export function TasksPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
   });
 
-  const apiTasks = tasksQuery.data ?? [];
-  const tasks = apiTasks.length > 0 ? apiTasks : demoRowsFallback;
+  const tasks = tasksQuery.data ?? [];
 
   const assignees = useMemo(() => Array.from(new Set(tasks.map((task) => task.assignee).filter(Boolean))) as string[], [tasks]);
 
@@ -287,7 +207,14 @@ export function TasksPage() {
       {tasksQuery.isLoading && <Loader text="Загружаем задачи..." />}
       {tasksQuery.error && <ErrorState error={tasksQuery.error} />}
 
-      {!tasksQuery.isLoading && !tasksQuery.error && (
+      {!tasksQuery.isLoading && !tasksQuery.error && tasks.length === 0 && (
+        <EmptyState
+          title="В базе пока нет задач"
+          text="Отправьте сообщение в Telegram-чат или создайте задачу через API — после обработки backend она появится здесь без моков."
+        />
+      )}
+
+      {!tasksQuery.isLoading && !tasksQuery.error && tasks.length > 0 && (
         <section className="grid gap-5 xl:grid-cols-[minmax(650px,1.05fr)_minmax(520px,0.95fr)]">
           <TasksList
             tasks={filteredTasks}

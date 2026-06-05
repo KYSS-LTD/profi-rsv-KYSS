@@ -1,5 +1,4 @@
 import { NavLink } from 'react-router-dom';
-import { env } from '../../shared/config/env';
 import { cn } from '../../shared/lib/cn';
 import { Badge } from '../../shared/ui/Badge';
 import { navigation } from './navigation';
@@ -16,8 +15,7 @@ export function Topbar() {
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          {env.useMocks && <Badge tone="amber">Демо-данные</Badge>}
-          <Badge tone="green"></Badge>
+          <Badge tone="green">Backend API</Badge>
         </div>
       </div>
 

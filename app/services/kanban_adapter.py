@@ -1,21 +1,39 @@
 from sqlalchemy.orm import Session
+
 from app.models.models import Task
+
 
 class KanbanAdapter:
     """
     Внутренний Kanban адаптер. Выполняет роль честного fallback-решения
     для управления доской задач, если внешняя интеграция отсутствует.
     """
+
     def __init__(self, db: Session):
         self.db = db
 
-    def add_task(self, title: str, description: str | None = None, candidate_id: int | None = None) -> Task:
+    def add_task(
+        self,
+        title: str,
+        description: str | None = None,
+        candidate_id: int | None = None,
+        assignee: str | None = None,
+        deadline: str | None = None,
+        source: str = "telegram_text",
+        confidence: float | None = None,
+        status: str = "todo",
+    ) -> Task:
         task = Task(
             title=title,
             description=description,
             candidate_id=candidate_id,
-            status="todo",
-            priority="medium"
+            assignee=assignee,
+            deadline=deadline,
+            source=source,
+            confidence=confidence,
+            created_by_ai=candidate_id is not None,
+            status=status,
+            priority="medium",
         )
         self.db.add(task)
         self.db.commit()
