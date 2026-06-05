@@ -1,4 +1,4 @@
-export type Role = 'SUPER_ADMIN' | 'MANAGER' | 'DEPARTMENT_MANAGER' | 'PRODUCT_MANAGER' | 'EMPLOYEE' | 'VIEWER';
+export type Role = 'SUPER_ADMIN' | 'ORG_OWNER' | 'MANAGER' | 'DEPARTMENT_MANAGER' | 'TEAM_LEAD' | 'PRODUCT_MANAGER' | 'EMPLOYEE' | 'VIEWER';
 
 export type CurrentUser = {
   id: string;
@@ -6,6 +6,11 @@ export type CurrentUser = {
   email: string;
   full_name?: string | null;
   role: Role;
+  department_id?: string | null;
+  team_id?: string | null;
+  must_change_password?: boolean;
+  permissions?: string[];
+  impersonated_by_user_id?: string | null;
 };
 
 export type Department = {
@@ -48,6 +53,8 @@ export type OrganizationChat = {
 export type Employee = {
   id: string;
   organization_id: string;
+  user_id?: string | null;
+  manager_id?: string | null;
   full_name: string;
   email?: string | null;
   role: Role;
@@ -62,7 +69,11 @@ export type Employee = {
   telegram_connected_at?: string | null;
   telegram_id?: number | null;
   generated_password?: string | null;
+  invitation_text?: string | null;
+  active?: boolean;
   is_active: boolean;
+  deactivated_at?: string | null;
+  deactivated_by?: string | null;
 };
 
 export type TaskStatusV2 = 'DETECTED' | 'PENDING_CONFIRMATION' | 'ACCEPTED' | 'REJECTED' | 'TO_DO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE' | 'OVERDUE';
