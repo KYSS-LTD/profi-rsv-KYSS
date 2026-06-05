@@ -38,7 +38,7 @@ class SetupService:
                 email=payload.email.lower(),
                 password_hash=hash_password(payload.password),
                 full_name=payload.full_name.strip(),
-                role=Role.MANAGER.value,
+                role=Role.ORG_OWNER.value,
                 is_active=True,
             )
             self.db.add(user)

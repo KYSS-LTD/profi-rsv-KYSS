@@ -1,8 +1,11 @@
 import { NavLink } from 'react-router-dom';
+import { useAuth } from '../../app/auth';
 import { cn } from '../../shared/lib/cn';
-import { navigation } from './navigation';
+import { navigationForRole } from './navigation';
 
 export function Sidebar() {
+  const { user } = useAuth();
+  const items = navigationForRole(user?.role);
   return (
     <aside className="hidden w-64 shrink-0 border-r border-stone-200 bg-white px-4 py-6 lg:block">
       <div className="mb-8 flex items-center gap-3 px-2">
@@ -14,7 +17,7 @@ export function Sidebar() {
       </div>
 
       <nav className="space-y-1" aria-label="Главная навигация">
-        {navigation.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
 
           return (

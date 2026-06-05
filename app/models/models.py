@@ -140,6 +140,7 @@ class User(Base, TimestampMixin):
     department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
     team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    impersonated_by_user_id: Mapped[uuid.UUID | None] = uuid_fk("users.id", nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     refresh_token_hash: Mapped[str | None] = mapped_column(String(128))
 
@@ -162,6 +163,7 @@ class Employee(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = uuid_pk()
     organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
     user_id: Mapped[uuid.UUID | None] = uuid_fk("users.id", nullable=True)
+    manager_id: Mapped[uuid.UUID | None] = uuid_fk("employees.id", nullable=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(320), index=True)
     role: Mapped[str] = mapped_column(String(32), default="EMPLOYEE", nullable=False)
@@ -176,7 +178,10 @@ class Employee(Base, TimestampMixin):
     telegram_connected_at: Mapped[datetime | None] = mapped_column(DateTime)
     generated_password: Mapped[str | None] = mapped_column(String(128))
     telegram_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE, index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    deactivated_by: Mapped[uuid.UUID | None] = uuid_fk("users.id", nullable=True)
 
 
 class TelegramAccountLink(Base, TimestampMixin):

@@ -13,6 +13,8 @@ from app.common.enums import ConfirmationStatus, TaskStatus
 from app.models.models import Employee, KomandusTask, Message, Notification, OrganizationChat, TaskCandidate, TaskConfirmation, TelegramAccountLink, TelegramChat, TelegramConnectCode
 from app.services.kanban_adapter import KanbanAdapter
 from app.services.llm_service import llm_service
+from app.telegram.callbacks import TelegramCallbackRouter
+from app.telegram.commands import TelegramCommandRouter
 from app.telegram.service import TelegramDeliveryError, TelegramService
 
 
@@ -30,7 +32,7 @@ class TaskDecisionEngine:
         if payload.get("edited_message"):
             return await self._handle_message(payload["edited_message"])
         if payload.get("callback_query"):
-            return await self._handle_callback(payload["callback_query"])
+            return await TelegramCallbackRouter(self).dispatch(payload["callback_query"])
         if payload.get("chat_member"):
             return await self._handle_chat_member(payload["chat_member"])
         if payload.get("my_chat_member"):
@@ -79,7 +81,7 @@ class TaskDecisionEngine:
             "candidates_created": len(candidates),
         }
 
-    async def _handle_callback(self, callback: dict):
+    async def _handle_task_callback(self, callback: dict):
         callback_id = callback["id"]
         data = callback.get("data", "")
         message = callback.get("message", {})
@@ -135,17 +137,11 @@ class TaskDecisionEngine:
         text = (msg.get("text") or "").strip()
         if not text.startswith("/"):
             return None
-        command, *args = text.split(maxsplit=1)
-        command = command.split("@")[0].lower()
+        command = text.split(maxsplit=1)[0].split("@")[0].lower()
         if command == "/connect":
+            args = text.split(maxsplit=1)[1:]
             return await self._connect_chat(msg, args[0].strip() if args else "")
-        if command == "/start":
-            return await self._link_employee(msg)
-        if command == "/login":
-            return await self._login_command(msg)
-        if command in {"/tasks", "/today", "/stats", "/help"}:
-            return await self._employee_command(msg, command)
-        return None
+        return await TelegramCommandRouter(self.db, self.telegram).dispatch(msg)
 
     async def _connect_chat(self, msg: dict, code: str):
         chat = msg.get("chat") or {}
@@ -178,103 +174,6 @@ class TaskDecisionEngine:
         else:
             await self._send_message(chat.get("id"), "⚠️ Чат подключен, но бот не является администратором. Назначьте бота администратором, иначе часть функций Telegram будет недоступна.")
         return {"status": "connected", "chat_id": chat.get("id"), "members_count": members_count, "bot_is_admin": bot_is_admin}
-
-    async def _link_employee(self, msg: dict):
-        sender = msg.get("from") or {}
-        username = sender.get("username")
-        chat = msg.get("chat") or {}
-        chat_id = chat.get("id")
-        if chat.get("type") != "private":
-            await self._send_message(chat_id, "Для безопасного входа откройте личный чат с ботом и выполните /start.")
-            return {"status": "not_linked", "reason": "not_private_chat"}
-        if not username:
-            await self._send_message(chat_id, "Не вижу ваш Telegram username. Добавьте username в Telegram и повторите /start.")
-            return {"status": "not_linked", "reason": "missing_username"}
-        normalized = f"@{username}"
-        employee = self.db.query(Employee).filter(func.lower(Employee.telegram_username) == normalized.lower()).first()
-        if not employee:
-            await self._send_message(chat_id, "Аккаунт сотрудника не найден. Попросите менеджера добавить ваш @username в Командус.")
-            return {"status": "not_linked", "reason": "employee_not_found"}
-        employee.telegram_id = sender.get("id")
-        employee.telegram_first_name = sender.get("first_name")
-        employee.telegram_last_name = sender.get("last_name")
-        employee.telegram_username = normalized
-        employee.telegram_status = "CONNECTED"
-        employee.telegram_connected_at = datetime.utcnow()
-        try:
-            profile = await self.telegram.get_user_profile(sender.get("id"))
-            photos = profile.get("result", {}).get("photos") or []
-            if photos and photos[0]:
-                employee.avatar_url = photos[0][-1].get("file_id")
-        except TelegramDeliveryError as exc:
-            self.audit.log(action="Telegram Delivery Failed", organization_id=employee.organization_id, entity_type="Employee", entity_id=employee.id, metadata={"error": str(exc), "flow": "get_user_profile"})
-        link = self.db.query(TelegramAccountLink).filter(TelegramAccountLink.organization_id == employee.organization_id, TelegramAccountLink.employee_id == employee.id).first()
-        if not link:
-            link = TelegramAccountLink(organization_id=employee.organization_id, employee_id=employee.id, telegram_id=sender.get("id"), telegram_username=normalized, is_active=True)
-            self.db.add(link)
-        else:
-            link.telegram_id = sender.get("id")
-            link.telegram_username = normalized
-            link.is_active = True
-        self.db.add(Notification(organization_id=employee.organization_id, employee_id=employee.id, type="employee_connected", title="Сотрудник подключил Telegram", body=employee.full_name))
-        self.db.commit()
-        await self._send_employee_login(employee, chat_id)
-        await self._send_message(chat_id, self._telegram_menu_text())
-        return {"status": "linked", "employee_id": str(employee.id)}
-
-    async def _login_command(self, msg: dict):
-        chat = msg.get("chat") or {}
-        chat_id = chat.get("id")
-        if chat.get("type") != "private":
-            await self._send_message(chat_id, "Для безопасного входа выполните /login в личном чате с ботом.")
-            return {"status": "not_sent", "reason": "not_private_chat"}
-        sender = msg.get("from") or {}
-        employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
-        if not employee:
-            await self._send_message(chat_id, "Сначала подключите аккаунт командой /start.")
-            return {"status": "not_linked"}
-        await self._send_employee_login(employee, chat_id)
-        return {"status": "magic_login_sent", "employee_id": str(employee.id)}
-
-    async def _send_employee_login(self, employee: Employee, chat_id: int | None):
-        magic_url = None
-        if employee.user_id:
-            token = MagicLoginService(self.db).create_token(employee.user_id)
-            magic_url = MagicLoginService(self.db).build_magic_login_url(token.token)
-        if employee.telegram_id:
-            try:
-                await self.telegram.send_magic_login(employee, magic_url)
-            except TelegramDeliveryError as exc:
-                self.audit.log(action="Telegram Delivery Failed", organization_id=employee.organization_id, entity_type="Employee", entity_id=employee.id, metadata={"error": str(exc), "flow": "magic_login"})
-                raise
-        else:
-            fallback = "Ваш аккаунт создан.\n\nДля входа обратитесь к администратору."
-            await self._send_message(chat_id, fallback)
-
-    def _telegram_menu_text(self) -> str:
-        return "Меню Командус:\n\n📋 Мои задачи\n📅 Сегодня\n📈 Моя статистика\n🔔 Напоминания\n🤖 Спросить AI\n⚙️ Настройки"
-
-    async def _employee_command(self, msg: dict, command: str):
-        chat_id = (msg.get("chat") or {}).get("id")
-        sender = msg.get("from") or {}
-        employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
-        if command == "/help":
-            text = "/tasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/stats — личная статистика\n/login — новая ссылка для входа\n/help — команды"
-        elif not employee:
-            text = "Сначала подключите аккаунт командой /start."
-        else:
-            from app.models.models import KomandusTask
-            from app.common.enums import TaskStatus
-            tasks = self.db.query(KomandusTask).filter(KomandusTask.employee_id == employee.id).all()
-            if command == "/stats":
-                done = sum(1 for task in tasks if task.status == TaskStatus.DONE.value)
-                overdue = sum(1 for task in tasks if task.status == TaskStatus.OVERDUE.value)
-                text = f"Статистика: всего {len(tasks)}, завершено {done}, просрочено {overdue}."
-            else:
-                active = [task for task in tasks if task.status not in {TaskStatus.DONE.value, TaskStatus.REJECTED.value}]
-                text = "Ваши задачи:\n" + "\n".join(f"• {task.title} — {task.status}" for task in active[:10]) if active else "Активных задач нет."
-        await self._send_message(chat_id, text)
-        return {"status": "command", "command": command}
 
     def _upsert_chat(self, chat: dict) -> TelegramChat:
         telegram_chat_id = chat["id"]

@@ -7,7 +7,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.audit.services import AuditService
-from app.common.enums import ConfirmationStatus, TaskStatus
+from app.common.access_scope import AccessScopeService
+from app.common.enums import ConfirmationStatus, Permission, TaskStatus
+from app.common.rbac import has_permission
 from app.common.state_machine import assert_valid_transition
 from app.models.models import Employee, KomandusTask, TaskConfirmation
 from app.telegram.service import TelegramDeliveryError, TelegramService
@@ -27,6 +29,10 @@ class V2TaskService:
         return self.repo.list_for_user(user)
 
     def create_manual(self, payload: V2TaskCreate, user):
+        if not has_permission(user.role, Permission.CAN_ASSIGN_TASKS):
+            raise HTTPException(status_code=403, detail="Missing permission: can_assign_tasks")
+        if payload.employee_id and not AccessScopeService(self.db).can_access_employee(user, payload.employee_id):
+            raise HTTPException(status_code=403, detail="Assignee outside access scope")
         task = KomandusTask(organization_id=user.organization_id, employee_id=payload.employee_id, department_id=payload.department_id, team_id=payload.team_id, title=payload.title, description=payload.description, due_at=payload.due_at, status=TaskStatus.TO_DO.value)
         self.repo.save(task)
         self._send_task_confirmation_if_possible(task)
@@ -55,7 +61,7 @@ class V2TaskService:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     def change_status(self, task_id: UUID, new_status: TaskStatus, user):
-        task = self.repo.get_scoped(task_id, user.organization_id, user.role)
+        task = self.repo.get_scoped(task_id, user)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         try:
@@ -67,11 +73,11 @@ class V2TaskService:
         if new_status == TaskStatus.DONE:
             task.completed_at = datetime.utcnow()
         self.repo.save(task)
-        self.audit.log(action="Move Task", organization_id=task.organization_id, user_id=user.id, entity_type="Task", entity_id=task.id, metadata={"old_status": old, "new_status": task.status})
+        self.audit.log(action="Change Task Deadline" if old == task.status and task.due_at else "Move Task", organization_id=task.organization_id, user_id=user.id, entity_type="Task", entity_id=task.id, metadata={"old_status": old, "new_status": task.status})
         return task
 
     def confirm(self, task_id: UUID, approved: bool, reason: str | None, user):
-        task = self.repo.get_scoped(task_id, user.organization_id, user.role)
+        task = self.repo.get_scoped(task_id, user)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         confirmation = self.db.query(TaskConfirmation).filter(TaskConfirmation.task_id == task.id).first()

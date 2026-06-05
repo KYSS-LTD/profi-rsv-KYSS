@@ -14,8 +14,8 @@ import { Loader } from '../shared/ui/Loader';
 import { PageHeader } from '../shared/ui/PageHeader';
 import { Select } from '../shared/ui/Select';
 
-const roles: Role[] = ['MANAGER', 'DEPARTMENT_MANAGER', 'PRODUCT_MANAGER', 'EMPLOYEE', 'VIEWER'];
-const roleLabel: Record<Role, string> = { SUPER_ADMIN: 'Super Admin', MANAGER: 'Менеджер', DEPARTMENT_MANAGER: 'Руководитель отдела', PRODUCT_MANAGER: 'Product Manager', EMPLOYEE: 'Сотрудник', VIEWER: 'Наблюдатель' };
+const roles: Role[] = ['ORG_OWNER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD', 'PRODUCT_MANAGER', 'EMPLOYEE', 'VIEWER'];
+const roleLabel: Record<Role, string> = { SUPER_ADMIN: 'Super Admin', ORG_OWNER: 'Владелец организации', MANAGER: 'Менеджер (legacy)', DEPARTMENT_MANAGER: 'Руководитель отдела', TEAM_LEAD: 'Team Lead', PRODUCT_MANAGER: 'Product Manager', EMPLOYEE: 'Сотрудник', VIEWER: 'Наблюдатель' };
 
 export function EmployeesPage() {
   const queryClient = useQueryClient();
@@ -38,7 +38,7 @@ export function EmployeesPage() {
     total: employees.length,
     active: employees.filter((e) => e.is_active).length,
     telegram: employees.filter((e) => e.telegram_status === 'CONNECTED').length,
-    managers: employees.filter((e) => ['MANAGER', 'DEPARTMENT_MANAGER', 'PRODUCT_MANAGER'].includes(e.role)).length,
+    managers: employees.filter((e) => ['ORG_OWNER', 'MANAGER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD', 'PRODUCT_MANAGER'].includes(e.role)).length,
   }), [employees]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['v2', 'employees'] });

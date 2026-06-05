@@ -8,6 +8,9 @@ from app.audit.services import AuditService
 from app.auth.magic import MagicLoginService
 from app.auth.repositories import UserRepository
 from app.common.security import create_jwt, hash_password, verify_password
+from app.common.enums import Role
+from app.common.rbac import normalize_role
+from app.models.models import User
 from app.core.config import settings
 
 
@@ -38,6 +41,19 @@ class AuthService:
         self.users.save(user)
         self.audit.log(action="Change Password", organization_id=user.organization_id, user_id=user.id)
         return {"status": "password_changed"}
+
+    def impersonate(self, actor, target_user_id: str, response: Response):
+        if normalize_role(actor.role) not in {Role.ORG_OWNER, Role.SUPER_ADMIN}:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only organization owners can impersonate employees")
+        target = self.users.get_by_id(str(target_user_id))
+        if not target:
+            raise HTTPException(status_code=404, detail="User not found")
+        if actor.role != Role.SUPER_ADMIN.value and target.organization_id != actor.organization_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot impersonate user outside organization")
+        target.impersonated_by_user_id = actor.id
+        self.users.save(target)
+        self.audit.log(action="Impersonate User", organization_id=target.organization_id, user_id=actor.id, entity_type="User", entity_id=target.id)
+        return self.issue_tokens_for_user(target, response, audit_action="Impersonation Login")
 
     def issue_tokens_for_user(self, user, response: Response, *, audit_action: str = "Login"):
         access = create_jwt({"sub": str(user.id), "org": str(user.organization_id), "role": user.role}, settings.JWT_SECRET, settings.ACCESS_TOKEN_EXPIRE_SECONDS)

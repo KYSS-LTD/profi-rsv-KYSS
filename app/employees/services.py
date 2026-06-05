@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.audit.services import AuditService
 from app.auth.magic import MagicLoginService
 from app.core.config import settings
+from app.common.access_scope import AccessScopeService
 from app.common.security import hash_password
 from app.employees.repositories import EmployeeRepository
 from app.employees.schemas import EmployeeCreate, EmployeeUpdate
@@ -23,10 +24,12 @@ class EmployeeService:
         self.telegram = TelegramService()
 
     def list(self, user):
-        return [self._serialize_employee(employee) for employee in self.repo.list_for_org(user.organization_id)]
+        employees = AccessScopeService(self.db).get_visible_employees(user).order_by(Employee.created_at.desc()).all()
+        return [self._serialize_employee(employee) for employee in employees]
 
     def create(self, payload: EmployeeCreate, user):
         self._validate_department_team(user.organization_id, payload.department_id, payload.team_id)
+        self._validate_manager(user.organization_id, payload.manager_id)
         password = self._generate_password()
         email = str(payload.email).lower() if payload.email else None
         db_user = None
@@ -53,6 +56,7 @@ class EmployeeService:
             organization_id=user.organization_id,
             user_id=db_user.id if db_user else None,
             full_name=payload.full_name,
+            manager_id=payload.manager_id,
             email=email,
             role=payload.role.value,
             department_id=payload.department_id,
@@ -73,10 +77,14 @@ class EmployeeService:
 
     def update(self, employee_id: UUID, payload: EmployeeUpdate, user):
         employee = self.repo.get_for_org(employee_id, user.organization_id, user.role)
+        if employee and not AccessScopeService(self.db).can_access_employee(user, employee.id):
+            raise HTTPException(status_code=403, detail="Employee outside access scope")
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found")
         values = payload.model_dump(exclude_unset=True)
         self._validate_department_team(user.organization_id, values.get("department_id", employee.department_id), values.get("team_id", employee.team_id))
+        if "manager_id" in values:
+            self._validate_manager(user.organization_id, values.get("manager_id"))
         old_role = employee.role
         for field, value in values.items():
             if field == "role" and value is not None:
@@ -115,9 +123,16 @@ class EmployeeService:
 
     def _set_active(self, employee_id: UUID, user, active: bool, action: str):
         employee = self.repo.get_for_org(employee_id, user.organization_id, user.role)
+        if employee and not AccessScopeService(self.db).can_access_employee(user, employee.id):
+            raise HTTPException(status_code=403, detail="Employee outside access scope")
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found")
+        if not AccessScopeService(self.db).can_access_employee(user, employee.id):
+            raise HTTPException(status_code=403, detail="Employee outside access scope")
+        employee.active = active
         employee.is_active = active
+        employee.deactivated_at = None if active else __import__("datetime").datetime.utcnow()
+        employee.deactivated_by = None if active else user.id
         if employee.user_id:
             db_user = self.db.query(User).filter(User.id == employee.user_id).first()
             if db_user:
@@ -144,6 +159,8 @@ class EmployeeService:
         return {
             "id": employee.id,
             "organization_id": employee.organization_id,
+            "user_id": employee.user_id,
+            "manager_id": employee.manager_id,
             "full_name": employee.full_name,
             "email": employee.email,
             "role": employee.role,
@@ -157,6 +174,9 @@ class EmployeeService:
             "telegram_status": employee.telegram_status,
             "telegram_connected_at": employee.telegram_connected_at,
             "telegram_id": employee.telegram_id,
+            "active": employee.active,
+            "deactivated_at": employee.deactivated_at,
+            "deactivated_by": employee.deactivated_by,
             "generated_password": None,
             "invitation_text": self._build_invitation_text(),
             "is_active": employee.is_active,
@@ -165,6 +185,10 @@ class EmployeeService:
     def _build_invitation_text(self) -> str:
         bot_url = settings.telegram_bot_url or "ссылку на Telegram-бота уточните у администратора"
         return f"Откройте бота Командус: {bot_url}\n1. Откройте бота.\n2. Выполните /start.\n3. Получите ссылку для входа."
+
+    def _validate_manager(self, organization_id, manager_id):
+        if manager_id and not self.db.query(Employee).filter(Employee.id == manager_id, Employee.organization_id == organization_id, Employee.is_active.is_(True)).first():
+            raise HTTPException(status_code=404, detail="Manager not found")
 
     def _validate_department_team(self, organization_id, department_id, team_id):
         if department_id and not self.db.query(Department).filter(Department.id == department_id, Department.organization_id == organization_id).first():

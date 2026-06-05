@@ -22,6 +22,15 @@ export async function magicLogin(token: string) {
   return response;
 }
 
+export async function impersonate(userId: string) {
+  const response = await apiClient<TokenResponse>('/v2/auth/impersonate', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  });
+  setAccessToken(response.access_token);
+  return response;
+}
+
 export async function changePassword(newPassword: string) {
   return apiClient<{ status: string }>('/v2/auth/change-password', {
     method: 'POST',

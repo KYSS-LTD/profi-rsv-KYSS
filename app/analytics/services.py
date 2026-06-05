@@ -5,18 +5,31 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.ai.assistant import AIAssistantService
+from app.common.access_scope import AccessScopeService
 from app.common.enums import TaskStatus
-from app.models.models import Department, Employee, KomandusTask, OrganizationChat, BoardIntegration
+from app.models.models import Department, Employee, KomandusTask, BoardIntegration
 
 
 class AnalyticsService:
     def __init__(self, db: Session):
         self.db = db
+        self.scope = AccessScopeService(db)
 
-    def dashboard(self, user):
-        tasks = self._task_query(user).all()
-        employees = {employee.id: employee for employee in self.db.query(Employee).filter(Employee.organization_id == user.organization_id).all()}
-        departments = {department.id: department for department in self.db.query(Department).filter(Department.organization_id == user.organization_id).all()}
+    def dashboard(self, user, organization_id: UUID | None = None, department_id: UUID | None = None, team_id: UUID | None = None, employee_id: UUID | None = None):
+        query = self.scope.get_visible_tasks(user)
+        if organization_id:
+            query = query.filter(KomandusTask.organization_id == organization_id)
+        if department_id:
+            query = query.filter(KomandusTask.department_id == department_id)
+        if team_id:
+            query = query.filter(KomandusTask.team_id == team_id)
+        if employee_id:
+            query = query.filter(KomandusTask.employee_id == employee_id)
+        tasks = query.all()
+        visible_employees = self.scope.get_visible_employees(user).all()
+        employees = {employee.id: employee for employee in visible_employees}
+        departments = {department.id: department for department in self.scope.get_visible_departments(user).all()}
         total = len(tasks)
         in_work = sum(1 for task in tasks if task.status in {TaskStatus.ACCEPTED.value, TaskStatus.TO_DO.value, TaskStatus.IN_PROGRESS.value, TaskStatus.REVIEW.value})
         completed = sum(1 for task in tasks if task.status == TaskStatus.DONE.value)
@@ -61,7 +74,7 @@ class AnalyticsService:
             "acceptance_percent": round(accepted / total * 100, 2) if total else 0,
             "rejection_percent": round(rejected / total * 100, 2) if total else 0,
             "pie_statuses": dict(status_counts),
-            "top_employees": [{"employee_id": str(employee_id), "employee_name": employees.get(employee_id).full_name if employee_id in employees else "Не назначен", "tasks": count} for employee_id, count in by_employee.most_common(10)],
+            "top_employees": [{"employee_id": str(emp_id), "employee_name": employees.get(emp_id).full_name if emp_id in employees else "Не назначен", "tasks": count} for emp_id, count in by_employee.most_common(10)],
             "departments": [{"department_id": str(dept_id), "department_name": departments.get(dept_id).name if dept_id in departments else "Без отдела", "tasks": count} for dept_id, count in Counter(task.department_id for task in tasks if task.department_id).items()],
             "closed_by_day": [{"date": day, "completed": count} for day, count in sorted(closed_by_day.items())],
             "burnup": burnup,
@@ -70,10 +83,10 @@ class AnalyticsService:
         }
 
     def employee(self, employee_id: UUID, user):
-        employee = self.db.query(Employee).filter(Employee.id == employee_id, Employee.organization_id == user.organization_id).first()
+        employee = self.scope.get_visible_employees(user).filter(Employee.id == employee_id).first()
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found")
-        tasks = self.db.query(KomandusTask).filter(KomandusTask.employee_id == employee_id, KomandusTask.organization_id == user.organization_id).all()
+        tasks = self.scope.get_visible_tasks(user).filter(KomandusTask.employee_id == employee_id).all()
         accepted = sum(1 for task in tasks if task.accepted_at or task.status != TaskStatus.REJECTED.value)
         rejected = sum(1 for task in tasks if task.status == TaskStatus.REJECTED.value)
         completed = sum(1 for task in tasks if task.status == TaskStatus.DONE.value)
@@ -81,52 +94,16 @@ class AnalyticsService:
         completion_hours = [((task.completed_at - task.created_at).total_seconds() / 3600) for task in tasks if task.completed_at]
         response_hours = [((task.accepted_at - task.created_at).total_seconds() / 3600) for task in tasks if task.accepted_at]
         score = (completed / (overdue * 2 + 1)) * accepted
-        ranking = self._ranking(user.organization_id)
-        return {
-            "employee_id": employee_id,
-            "employee_name": employee.full_name,
-            "accepted_tasks": accepted,
-            "rejected_tasks": rejected,
-            "completed_tasks": completed,
-            "overdue_tasks": overdue,
-            "average_completion_time": round(sum(completion_hours) / len(completion_hours), 2) if completion_hours else 0,
-            "average_response_time": round(sum(response_hours) / len(response_hours), 2) if response_hours else 0,
-            "efficiency_score": round(score, 2),
-            "organization_rank": ranking.get(str(employee_id), 0),
-        }
+        ranking = self._ranking(user)
+        return {"employee_id": employee_id, "employee_name": employee.full_name, "accepted_tasks": accepted, "rejected_tasks": rejected, "completed_tasks": completed, "overdue_tasks": overdue, "average_completion_time": round(sum(completion_hours) / len(completion_hours), 2) if completion_hours else 0, "average_response_time": round(sum(response_hours) / len(response_hours), 2) if response_hours else 0, "efficiency_score": round(score, 2), "organization_rank": ranking.get(str(employee_id), 0)}
 
     def ai_assistant(self, user, question: str):
-        data = self.dashboard(user)
-        facts = [
-            f"Всего задач: {data['total_tasks']}",
-            f"Просрочено: {data['overdue']}",
-            f"В работе: {data['in_work']}",
-            f"AI accuracy: {data['ai_accuracy']}%",
-            f"Отказы: {data['rejection_percent']}%",
-        ]
-        lower = question.lower()
-        if "перегруж" in lower:
-            leader = next(iter(data["top_employees"]), None)
-            answer = f"Самая высокая нагрузка сейчас у {leader['employee_name']} — {leader['tasks']} задач." if leader else "Нагрузка пока не выявлена: задач нет."
-        elif "срок" in lower or "рис" in lower:
-            answer = f"Главный риск — {data['overdue']} просроченных задач и {sum(1 for item in data['attention'] if item['type'] == 'unassigned')} групп задач без исполнителя."
-        else:
-            answer = f"За период в системе {data['total_tasks']} задач, {data['completed']} завершено, {data['in_work']} в работе. Требуют внимания: {len(data['attention'])} сигналов."
-        return {"answer": answer, "facts": facts}
+        return AIAssistantService(self.db).fallback_answer(user, question)
 
-    def _task_query(self, user):
-        query = self.db.query(KomandusTask)
-        if user.role != "SUPER_ADMIN":
-            query = query.filter(KomandusTask.organization_id == user.organization_id)
-        if user.role == "DEPARTMENT_MANAGER" and user.department_id:
-            query = query.filter(KomandusTask.department_id == user.department_id)
-        return query
-
-    def _ranking(self, organization_id):
-        employees = self.db.query(Employee).filter(Employee.organization_id == organization_id).all()
+    def _ranking(self, user):
         scored = []
-        for employee in employees:
-            tasks = self.db.query(KomandusTask).filter(KomandusTask.employee_id == employee.id).all()
+        for employee in self.scope.get_visible_employees(user).all():
+            tasks = self.scope.get_visible_tasks(user).filter(KomandusTask.employee_id == employee.id).all()
             accepted = sum(1 for task in tasks if task.status != TaskStatus.REJECTED.value)
             completed = sum(1 for task in tasks if task.status == TaskStatus.DONE.value)
             overdue = sum(1 for task in tasks if task.status == TaskStatus.OVERDUE.value)
