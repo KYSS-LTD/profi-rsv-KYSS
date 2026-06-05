@@ -217,6 +217,19 @@ class TaskConfirmation(Base, TimestampMixin):
     responded_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
+class ProfileNote(Base, TimestampMixin):
+    __tablename__ = "profile_notes"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    user_id: Mapped[uuid.UUID] = uuid_fk("users.id")
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), default="manual", nullable=False)
+    task_id: Mapped[str | None] = mapped_column(String(128))
+    meeting_id: Mapped[str | None] = mapped_column(String(128))
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

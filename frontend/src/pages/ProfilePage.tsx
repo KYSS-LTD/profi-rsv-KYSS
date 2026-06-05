@@ -1,7 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMyTasks } from '../shared/api/tasks';
-import { createNote, deleteNote, getAchievements, getNotes, getProfile, getRecommendations, getUserDigest } from '../shared/api/profile';
-import { env } from '../shared/config/env';
+import { createNote, deleteNote, getAchievements, getNotes, getProfile, getProfileTasks, getRecommendations, getUserDigest } from '../shared/api/profile';
 import { ErrorState } from '../shared/ui/ErrorState';
 import { Loader } from '../shared/ui/Loader';
 import { PageHeader } from '../shared/ui/PageHeader';
@@ -16,11 +14,12 @@ export function ProfilePage() {
   const queryClient = useQueryClient();
 
   const profileQuery = useQuery({ queryKey: ['profile'], queryFn: getProfile });
-  const myTasksQuery = useQuery({ queryKey: ['my-tasks'], queryFn: getMyTasks });
-  const digestQuery = useQuery({ queryKey: ['digest', env.defaultUserId], queryFn: () => getUserDigest(env.defaultUserId) });
+  const currentUserId = profileQuery.data?.id;
+  const myTasksQuery = useQuery({ queryKey: ['profile', 'my-tasks'], queryFn: getProfileTasks, enabled: Boolean(currentUserId) });
+  const digestQuery = useQuery({ queryKey: ['digest', currentUserId], queryFn: () => getUserDigest(currentUserId!), enabled: Boolean(currentUserId) });
   const notesQuery = useQuery({ queryKey: ['notes'], queryFn: getNotes });
-  const achievementsQuery = useQuery({ queryKey: ['achievements', env.defaultUserId], queryFn: () => getAchievements(env.defaultUserId) });
-  const recommendationsQuery = useQuery({ queryKey: ['recommendations', env.defaultUserId], queryFn: () => getRecommendations(env.defaultUserId) });
+  const achievementsQuery = useQuery({ queryKey: ['achievements', currentUserId], queryFn: () => getAchievements(currentUserId!), enabled: Boolean(currentUserId) });
+  const recommendationsQuery = useQuery({ queryKey: ['recommendations', currentUserId], queryFn: () => getRecommendations(currentUserId!), enabled: Boolean(currentUserId) });
 
   const createNoteMutation = useMutation({ mutationFn: createNote, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notes'] }) });
   const deleteNoteMutation = useMutation({ mutationFn: deleteNote, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notes'] }) });

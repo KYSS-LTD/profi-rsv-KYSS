@@ -23,12 +23,15 @@ class AuthService:
         user = self.users.get_by_email(email)
         if not user or not verify_password(password, user.password_hash):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        return self.issue_tokens_for_user(user, response, audit_action="Login")
+
+    def issue_tokens_for_user(self, user, response: Response, *, audit_action: str = "Login"):
         access = create_jwt({"sub": str(user.id), "org": str(user.organization_id), "role": user.role}, settings.JWT_SECRET, settings.ACCESS_TOKEN_EXPIRE_SECONDS)
         refresh = create_jwt({"sub": str(user.id), "typ": "refresh"}, settings.JWT_SECRET, settings.REFRESH_TOKEN_EXPIRE_SECONDS)
         user.refresh_token_hash = hashlib.sha256(refresh.encode()).hexdigest()
         self.users.save(user)
         response.set_cookie(REFRESH_COOKIE_NAME, refresh, max_age=settings.REFRESH_TOKEN_EXPIRE_SECONDS, httponly=True, secure=settings.APP_ENV == "production", samesite="lax")
-        self.audit.log(action="Login", organization_id=user.organization_id, user_id=user.id)
+        self.audit.log(action=audit_action, organization_id=user.organization_id, user_id=user.id)
         return {"access_token": access, "token_type": "bearer"}
 
     def refresh(self, refresh_token: str | None, response: Response):
