@@ -91,6 +91,8 @@ class EmployeeService:
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found")
         values = payload.model_dump(exclude_unset=True)
+        if "telegram_id" in values and normalize_role(user.role) == Role.MANAGER:
+            raise HTTPException(status_code=403, detail="Managers set telegram_username only; telegram_id is captured from Telegram /start")
         target_role = values.get("role", employee.role)
         target_manager_id = values.get("manager_id", employee.manager_id)
         self._ensure_manager_can_manage_payload(user, target_role, target_manager_id)

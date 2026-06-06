@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from typing import Any
+import asyncio
 import httpx
 
 from app.core.config import settings
@@ -32,10 +33,22 @@ class YouGileProvider(BoardProvider):
         return {"Authorization": f"Bearer {self.api_token}", "Content-Type": "application/json"}
 
     async def _request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.request(method, f"{self.base_url}{path}", headers=self.headers, **kwargs)
-            response.raise_for_status()
-            return response.json() if response.content else {}
+        last_error: httpx.HTTPError | None = None
+        for attempt in range(3):
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.request(method, f"{self.base_url}{path}", headers=self.headers, **kwargs)
+                if response.status_code == 429 or 500 <= response.status_code < 600:
+                    retry_after = response.headers.get("Retry-After")
+                    delay = float(retry_after) if retry_after and retry_after.isdigit() else 2 ** attempt
+                    last_error = httpx.HTTPStatusError(f"YouGile API transient error {response.status_code}", request=response.request, response=response)
+                    if attempt < 2:
+                        await asyncio.sleep(delay)
+                        continue
+                response.raise_for_status()
+                return response.json() if response.content else {}
+        if last_error:
+            raise last_error
+        return {}
 
     async def verify(self) -> dict[str, Any]:
         return await self._request("GET", "/auth/companies")

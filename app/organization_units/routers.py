@@ -86,5 +86,5 @@ def create_telegram_connect_code(payload: ConnectCodeCreate, current_user=Depend
 
 
 @router.patch("/chats/{chat_id}", response_model=OrganizationChatResponse)
-def update_chat(chat_id: UUID, ai_enabled: bool = Body(...), department_id: UUID | None = Body(default=None), current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN, Role.MANAGER)), db: Session = Depends(get_db)):
-    return OrganizationUnitService(db).set_chat_ai(chat_id, ai_enabled, department_id, current_user)
+def update_chat(chat_id: UUID, ai_enabled: bool = Body(...), department_id: UUID | None = Body(default=None), team_id: UUID | None = Body(default=None), current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN, Role.MANAGER)), db: Session = Depends(get_db)):
+    return OrganizationUnitService(db).set_chat_ai(chat_id, ai_enabled, department_id, current_user, team_id=team_id)

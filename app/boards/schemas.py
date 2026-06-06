@@ -33,3 +33,28 @@ class EmployeeBoardMappingCreate(BaseModel):
     employee_id: UUID
     external_user_id: str
     external_email: str | None = None
+
+
+class BoardMappingCreate(BaseModel):
+    department_id: UUID | None = None
+    team_id: UUID | None = None
+    board_integration_id: UUID | None = None
+    external_project_id: str | None = None
+    external_board_id: str = Field(min_length=1)
+    external_board_name: str | None = None
+
+
+class BoardMappingResponse(BaseModel):
+    id: UUID
+    organization_id: UUID
+    provider: str
+    department_id: UUID | None = None
+    team_id: UUID | None = None
+    board_integration_id: UUID | None = None
+    external_project_id: str | None = None
+    external_board_id: str
+    external_board_name: str | None = None
+    status: str
+    metadata_json: dict | None = None
+
+    model_config = {"from_attributes": True}

@@ -6,6 +6,20 @@ from app.auth.dependencies import get_current_user
 from app.common.enums import Permission, PermissionScope, Role
 
 ALLOWED_ROLE_VALUES = {role.value for role in Role}
+LEGACY_ROLE_MAP: dict[str, Role] = {
+    "SUPER_ADMIN": Role.OWNER,
+    "ORG_OWNER": Role.OWNER,
+    "DEPARTMENT_MANAGER": Role.MANAGER,
+    "TEAM_LEAD": Role.MANAGER,
+    "PRODUCT_MANAGER": Role.ADMIN,
+    "VIEWER": Role.OBSERVER,
+}
+FORBIDDEN_BUSINESS_ROLE_VALUES = set(LEGACY_ROLE_MAP) | {
+    "HR_MANAGER",
+    "SALES_MANAGER",
+    "REGIONAL_MANAGER",
+    "SENIOR_MANAGER",
+}
 
 ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
     Role.OWNER: set(Permission),
@@ -51,15 +65,30 @@ ROLE_ORDER = {Role.OBSERVER: 10, Role.EMPLOYEE: 20, Role.MANAGER: 50, Role.ADMIN
 
 
 def normalize_role(role: str | Role) -> Role:
-    """Return one of the only allowed technical access roles.
+    """Normalize persisted roles into the five-role model without data loss.
 
-    Business titles such as Team Lead, Head of Sales, HR Specialist, etc.
-    belong to Position/position fields and must never be normalized into RBAC.
+    Runtime authorization remains backward-compatible for tenants that still have
+    legacy role strings in historical rows. New writes must use
+    :func:`validate_role_for_write`, so business titles never become RBAC roles.
     """
     if isinstance(role, Role):
         return role
     value = str(role)
     if value not in ALLOWED_ROLE_VALUES:
+        raise ValueError(f"Unsupported Komandus role: {value}. Use Position for business titles.")
+    return Role(value)
+
+
+def validate_role_for_write(role: str | Role) -> Role:
+    """Validate a role provided by a create/update API.
+
+    Only OWNER, ADMIN, MANAGER, EMPLOYEE, and OBSERVER are accepted. Legacy
+    manager-like values and business titles must be stored as Position instead.
+    """
+    if isinstance(role, Role):
+        return role
+    value = str(role)
+    if value in FORBIDDEN_BUSINESS_ROLE_VALUES or value not in ALLOWED_ROLE_VALUES:
         raise ValueError(f"Unsupported Komandus role: {value}. Use Position for business titles.")
     return Role(value)
 

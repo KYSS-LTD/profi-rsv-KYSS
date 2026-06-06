@@ -39,8 +39,8 @@ class TaskDecisionEngine:
             return await self._handle_my_chat_member(payload["my_chat_member"])
         return {"status": "ignored", "reason": "unsupported_update"}
 
-    async def process_chat_context(self, chat_id: int) -> list[TaskCandidate]:
-        messages = self._get_unprocessed_chat_messages(chat_id)
+    async def process_chat_context(self, chat_id: int, topic_id: int | None = None) -> list[TaskCandidate]:
+        messages = self._get_unprocessed_chat_messages(chat_id, topic_id)
         if not messages:
             return []
 
@@ -48,11 +48,11 @@ class TaskDecisionEngine:
         extraction = await llm_service.extract_tasks(transcript)
         last_message = messages[-1]
         if not extraction.get("has_task"):
-            self._mark_chat_processed(chat_id, last_message.telegram_message_id)
+            self._mark_chat_processed(chat_id, last_message.telegram_message_id, topic_id)
             return []
 
         candidates = self._save_candidates(last_message, extraction["tasks"])
-        self._mark_chat_processed(chat_id, last_message.telegram_message_id)
+        self._mark_chat_processed(chat_id, last_message.telegram_message_id, topic_id)
         return candidates
 
     async def _handle_message(self, msg: dict):
@@ -70,14 +70,14 @@ class TaskDecisionEngine:
         topic_id = msg.get("message_thread_id")
         task_source = self._task_source_for_message(chat_id, topic_id)
         org_chat = self.db.query(OrganizationChat).filter(OrganizationChat.telegram_chat_id == chat_id, OrganizationChat.ai_enabled.is_(True), OrganizationChat.is_active.is_(True)).first()
-        if not task_source and org_chat:
+        if not task_source and org_chat and topic_id is None:
             task_source = self._ensure_task_source(org_chat.organization_id, chat_id, chat.get("title") or "Рабочий чат", chat.get("type"), None, org_chat.department_id, org_chat.team_id)
         if (not task_source or not task_source.ai_enabled) and chat.get("type") in {"group", "supergroup", "channel"}:
-            return {"status": "stored", "message_id": db_message.id, "ai_enabled": False}
-        candidates = await self.process_chat_context(chat_id)
+            return {"status": "stored", "message_id": db_message.id, "ai_enabled": False, "reason": "source_not_mapped"}
+        candidates = await self.process_chat_context(chat_id, topic_id)
 
         for candidate in candidates:
-            await self._send_confirmation_inline(chat_id, candidate)
+            await self._route_confirmation(candidate, task_source)
 
         return {
             "status": "processed",
@@ -239,6 +239,7 @@ class TaskDecisionEngine:
             username=sender.get("username"),
             text=text,
             source=source,
+            message_thread_id=msg.get("message_thread_id"),
             raw_payload=msg,
         )
         self.db.add(db_message)
@@ -285,16 +286,22 @@ class TaskDecisionEngine:
             self.db.refresh(candidate)
         return candidates
 
-    def _get_unprocessed_chat_messages(self, chat_id: int) -> list[Message]:
+    def _get_unprocessed_chat_messages(self, chat_id: int, topic_id: int | None = None) -> list[Message]:
         db_chat = self.db.query(TelegramChat).filter(TelegramChat.telegram_chat_id == chat_id).first()
         query = self.db.query(Message).filter(Message.chat_id == chat_id)
-        if db_chat and db_chat.last_processed_message_id is not None:
+        if topic_id is not None:
+            query = query.filter(Message.message_thread_id == topic_id)
+        else:
+            query = query.filter(Message.message_thread_id.is_(None))
+        if topic_id is None and db_chat and db_chat.last_processed_message_id is not None:
             query = query.filter(Message.telegram_message_id > db_chat.last_processed_message_id)
 
         rows = query.order_by(desc(Message.telegram_message_id)).limit(settings.TELEGRAM_CONTEXT_LIMIT).all()
         return list(reversed(rows))
 
-    def _mark_chat_processed(self, chat_id: int, telegram_message_id: int) -> None:
+    def _mark_chat_processed(self, chat_id: int, telegram_message_id: int, topic_id: int | None = None) -> None:
+        if topic_id is not None:
+            return
         db_chat = self.db.query(TelegramChat).filter(TelegramChat.telegram_chat_id == chat_id).first()
         if db_chat:
             db_chat.last_processed_message_id = telegram_message_id
@@ -345,17 +352,71 @@ class TaskDecisionEngine:
         status = member.get("result", {}).get("status")
         return status in {"administrator", "creator"}
 
-    async def _send_confirmation_inline(self, chat_id: int, candidate: TaskCandidate):
+    async def _route_confirmation(self, candidate: TaskCandidate, source: TaskSource | None):
+        confidence = candidate.confidence or 0
+        employee = self._employee_for_candidate(candidate, source)
+        if confidence >= 0.8 and employee and employee.telegram_id:
+            return await self._send_candidate_confirmation(employee.telegram_id, candidate, employee_flow=True)
+        manager = self._manager_for_source(source, employee)
+        if manager and manager.telegram_id:
+            return await self._send_candidate_confirmation(manager.telegram_id, candidate, employee_flow=False)
+        self.audit.log(
+            action="Task Confirmation Routing Failed",
+            organization_id=source.organization_id if source else None,
+            entity_type="TaskCandidate",
+            entity_id=candidate.id,
+            metadata={"confidence": confidence, "assignee_raw": candidate.assignee_raw},
+        )
+        return {"status": "not_routed", "candidate_id": candidate.id}
+
+    async def _send_candidate_confirmation(self, chat_id: int, candidate: TaskCandidate, *, employee_flow: bool):
         text = (
             "🤖 Обнаружена задача!\n\n"
             f"📝 Что сделать: {candidate.title}\n"
             f"👤 Ответственный: {candidate.assignee_raw or 'Не назначен'}\n"
             f"📅 Дедлайн: {candidate.deadline_raw or 'Не указан'}\n"
-            f"🎯 Уверенность AI: {int(candidate.confidence * 100)}%\n\n"
-            "Добавить задачу на Kanban-панель?"
+            f"🎯 Уверенность AI: {int((candidate.confidence or 0) * 100)}%"
         )
-        markup = {"inline_keyboard": [[{"text": "👍 Подтвердить", "callback_data": f"task_approve_{candidate.id}"}, {"text": "👎 Отклонить", "callback_data": f"task_reject_{candidate.id}"}]]}
-        return await self.telegram.send_group_message(chat_id, text, reply_markup=markup)
+        if employee_flow:
+            markup = {"inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"task_approve_{candidate.id}"}, {"text": "❌ Отклонить", "callback_data": f"task_reject_{candidate.id}"}]]}
+        else:
+            markup = {"inline_keyboard": [[{"text": "✅ Подтвердить", "callback_data": f"task_approve_{candidate.id}"}, {"text": "❌ Отклонить", "callback_data": f"task_reject_{candidate.id}"}], [{"text": "✏️ Изменить", "callback_data": f"task_clarify:{candidate.id}"}]]}
+        return await self.telegram.send_message(chat_id, text, reply_markup=markup)
+
+    def _employee_for_candidate(self, candidate: TaskCandidate, source: TaskSource | None) -> Employee | None:
+        if not candidate.assignee_raw:
+            return None
+        assignee = candidate.assignee_raw.strip().lower().lstrip("@")
+        query = self.db.query(Employee).filter(Employee.is_active.is_(True))
+        if source:
+            query = query.filter(Employee.organization_id == source.organization_id)
+        for employee in query.all():
+            aliases = {
+                (employee.full_name or "").lower(),
+                (employee.email or "").lower(),
+                (employee.telegram_username or "").lower().lstrip("@"),
+            }
+            if assignee in aliases:
+                return employee
+        return None
+
+    def _manager_for_source(self, source: TaskSource | None, employee: Employee | None = None) -> Employee | None:
+        if employee and employee.manager_id:
+            manager = self.db.query(Employee).filter(Employee.id == employee.manager_id, Employee.is_active.is_(True)).first()
+            if manager:
+                return manager
+        query = self.db.query(Employee).filter(Employee.is_active.is_(True), Employee.role == "MANAGER")
+        if source:
+            query = query.filter(Employee.organization_id == source.organization_id)
+            if source.team_id:
+                scoped = query.filter(Employee.team_id == source.team_id).first()
+                if scoped:
+                    return scoped
+            if source.department_id:
+                scoped = query.filter(Employee.department_id == source.department_id).first()
+                if scoped:
+                    return scoped
+        return query.first()
 
     async def _handle_task_accept(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
         task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()

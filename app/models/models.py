@@ -35,6 +35,7 @@ class Message(Base):
     telegram_message_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, index=True)
     telegram_user_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE)
     chat_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, index=True)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, index=True)
     sender_name: Mapped[str | None]
     username: Mapped[str | None]
     text: Mapped[str]
@@ -310,6 +311,7 @@ class TaskSource(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
     team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
+    board_mapping_id: Mapped[uuid.UUID | None] = uuid_fk("board_mappings.id", nullable=True)
     responsibility_area_id: Mapped[uuid.UUID | None] = uuid_fk("responsibility_areas.id", nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

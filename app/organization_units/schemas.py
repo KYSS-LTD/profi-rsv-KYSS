@@ -67,11 +67,15 @@ class TaskSourceResponse(BaseModel):
     id: UUID
     organization_id: UUID
     source_type: str
-    telegram_chat_id: int
+    telegram_chat_id: int | None = None
     telegram_topic_id: int | None = None
+    yougile_board_id: str | None = None
+    yougile_column_id: str | None = None
     title: str
     department_id: UUID | None = None
     team_id: UUID | None = None
+    board_mapping_id: UUID | None = None
+    responsibility_area_id: UUID | None = None
     is_active: bool
     ai_enabled: bool
     metadata_json: dict | None = None

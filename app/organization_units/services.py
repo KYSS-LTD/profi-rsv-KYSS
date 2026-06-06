@@ -8,7 +8,9 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.common.access_scope import AccessScopeService
 from app.common.enums import OrganizationMode, Role, TaskSourceType, TaskStatus
+from app.common.rbac import normalize_role
 from app.models.models import Department, Employee, KomandusTask, Organization, OrganizationChat, TaskSource, Team, TelegramConnectCode
 
 
@@ -60,8 +62,11 @@ class OrganizationUnitService:
         return query.order_by(OrganizationChat.connected_at.desc()).all()
 
     def create_connect_code(self, payload, user):
+        self._validate_source_ownership(user, payload.department_id, payload.team_id)
         if payload.department_id:
             self._get_department(payload.department_id, user)
+        if payload.team_id:
+            self._get_team(payload.team_id, user.organization_id)
         code = self._generate_code()
         expires_at = datetime.utcnow() + timedelta(minutes=30)
         row = TelegramConnectCode(organization_id=user.organization_id, department_id=payload.department_id, team_id=payload.team_id, code=code, expires_at=expires_at)
@@ -69,13 +74,18 @@ class OrganizationUnitService:
         self.db.commit()
         return {"code": code, "command": f"/connect {code}", "expires_at": expires_at, "instruction": ["Добавьте бота в рабочий чат или topic supergroup.", "Назначьте бота администратором.", f"Выполните команду /connect {code} в нужном чате или topic.", "Командус создаст TaskSource и привяжет источник к отделу/команде."]}
 
-    def set_chat_ai(self, chat_id: UUID, ai_enabled: bool, department_id: UUID | None, user):
+    def set_chat_ai(self, chat_id: UUID, ai_enabled: bool, department_id: UUID | None, user, team_id: UUID | None = None):
         chat = self.db.query(OrganizationChat).filter(OrganizationChat.id == chat_id, OrganizationChat.organization_id == user.organization_id).first()
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found")
+        if department_id or team_id:
+            self._validate_source_ownership(user, department_id, team_id)
         if department_id:
             self._get_department(department_id, user)
             chat.department_id = department_id
+        if team_id:
+            self._get_team(team_id, user.organization_id)
+            chat.team_id = team_id
         chat.ai_enabled = ai_enabled
         self.db.commit()
         self.db.refresh(chat)
@@ -89,19 +99,53 @@ class OrganizationUnitService:
         return query
 
     def _allowed_department_ids(self, user):
-        if user.role in {Role.OWNER.value, Role.ADMIN.value}:
+        role = normalize_role(user.role)
+        if role in {Role.OWNER, Role.ADMIN}:
             return None
-        if self.is_simple_mode(user.organization_id) and user.role == Role.MANAGER.value:
+        if self.is_simple_mode(user.organization_id) and role == Role.MANAGER:
             return None
-        if user.department_id:
-            return [user.department_id]
-        return []
+        scope = AccessScopeService(self.db).visible_scope_ids(user)
+        return list(scope.department_ids)
+
+    def _allowed_team_ids(self, user):
+        role = normalize_role(user.role)
+        if role in {Role.OWNER, Role.ADMIN}:
+            return None
+        if self.is_simple_mode(user.organization_id) and role == Role.MANAGER:
+            return None
+        scope = AccessScopeService(self.db).visible_scope_ids(user)
+        return list(scope.team_ids)
 
     def _get_department(self, department_id: UUID, user):
         department = self._department_query(user).filter(Department.id == department_id).first()
         if not department:
             raise HTTPException(status_code=404, detail="Department not found")
         return department
+
+    def _get_team(self, team_id: UUID, organization_id):
+        team = self.db.query(Team).filter(Team.id == team_id, Team.organization_id == organization_id).first()
+        if not team:
+            raise HTTPException(status_code=404, detail="Team not found")
+        return team
+
+    def _validate_source_ownership(self, user, department_id: UUID | None, team_id: UUID | None) -> None:
+        role = normalize_role(user.role)
+        if role in {Role.OWNER, Role.ADMIN}:
+            return
+        if role != Role.MANAGER:
+            raise HTTPException(status_code=403, detail="Only owners, admins, and managers can connect Telegram sources")
+        if self.is_simple_mode(user.organization_id) and not department_id and not team_id:
+            return
+        allowed_departments = set(self._allowed_department_ids(user) or [])
+        allowed_teams = set(self._allowed_team_ids(user) or [])
+        if team_id:
+            team = self._get_team(team_id, user.organization_id)
+            if team.id not in allowed_teams and team.department_id not in allowed_departments:
+                raise HTTPException(status_code=403, detail="Telegram source is outside manager visibility branch")
+            return
+        if department_id and department_id in allowed_departments:
+            return
+        raise HTTPException(status_code=403, detail="Telegram source must be mapped inside manager visibility branch")
 
     def _department_card(self, department: Department):
         task_query = self.db.query(KomandusTask).filter(KomandusTask.department_id == department.id)
@@ -127,8 +171,9 @@ class OrganizationUnitService:
     def list_task_sources(self, user):
         query = self.db.query(TaskSource).filter(TaskSource.organization_id == user.organization_id)
         allowed_department_ids = self._allowed_department_ids(user)
+        allowed_team_ids = self._allowed_team_ids(user)
         if allowed_department_ids is not None:
-            query = query.filter(TaskSource.department_id.in_(allowed_department_ids))
+            query = query.filter(TaskSource.department_id.in_(allowed_department_ids) | TaskSource.team_id.in_(allowed_team_ids or []))
         return query.order_by(TaskSource.created_at.desc()).all()
 
     def ensure_task_source_from_chat(self, *, organization_id, telegram_chat_id: int, title: str, chat_type: str | None = None, telegram_topic_id: int | None = None, department_id=None, team_id=None) -> TaskSource:

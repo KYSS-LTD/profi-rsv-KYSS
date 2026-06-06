@@ -53,9 +53,13 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.UniqueConstraint("organization_id", "provider", "external_board_id", name="uq_board_mapping_external_board"),
     )
+    op.add_column("task_sources", sa.Column("board_mapping_id", uuid_type, nullable=True))
+    op.create_foreign_key("fk_task_sources_board_mapping_id", "task_sources", "board_mappings", ["board_mapping_id"], ["id"])
 
 
 def downgrade() -> None:
+    op.drop_constraint("fk_task_sources_board_mapping_id", "task_sources", type_="foreignkey")
+    op.drop_column("task_sources", "board_mapping_id")
     op.drop_table("board_mappings")
     op.drop_constraint("fk_task_sources_responsibility_area_id", "task_sources", type_="foreignkey")
     op.drop_index("ix_task_sources_yougile_column_id", table_name="task_sources")
