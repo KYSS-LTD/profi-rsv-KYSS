@@ -96,19 +96,22 @@ class TelegramService:
         markup = {"inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"task_accept:{task.id}"}, {"text": "❌ Отказаться", "callback_data": f"task_reject:{task.id}"}], [{"text": "💬 Уточнить", "callback_data": f"task_clarify:{task.id}"}]]}
         return await self.send_html_message(employee.telegram_id, text, reply_markup=markup)
 
-    async def send_magic_login(self, employee: Employee, magic_url: str | None) -> dict[str, Any]:
+    async def send_activation_link(self, employee: Employee, activation_url: str | None) -> dict[str, Any]:
         if not employee.telegram_id:
             raise TelegramDeliveryError(f"Employee {employee.id} has no telegram_user_id. Cannot send direct message until /start is completed.")
-        if not magic_url or not self.is_allowed_button_url(magic_url):
-            logger.error("APP_PUBLIC_URL is missing or invalid; sending Telegram login fallback without button for employee %s", employee.id)
-            return await self.send_message(employee.telegram_id, "Ваш аккаунт создан.\n\nДля входа обратитесь к администратору.")
+        if not activation_url or not self.is_allowed_button_url(activation_url):
+            logger.error("APP_PUBLIC_URL is missing or invalid; sending Telegram activation fallback without button for employee %s", employee.id)
+            return await self.send_message(employee.telegram_id, "Ваш аккаунт создан.\n\nДля активации обратитесь к администратору.")
         first_name = employee.telegram_first_name or (employee.full_name.split()[0] if employee.full_name else "")
-        text = f"Здравствуйте, {first_name}.\n\nВаш аккаунт в Командус готов.\n\nНажмите кнопку ниже для входа."
-        markup = {"inline_keyboard": [[{"text": "Войти в Командус", "url": magic_url}]]}
+        text = f"Здравствуйте, {first_name}.\n\nВаш аккаунт в Командус готов. Задайте пароль самостоятельно по защищённой ссылке активации."
+        markup = {"inline_keyboard": [[{"text": "🔗 Активировать Командус", "url": activation_url}]]}
         return await self.send_message(employee.telegram_id, text, reply_markup=markup)
 
+    async def send_magic_login(self, employee: Employee, magic_url: str | None) -> dict[str, Any]:
+        return await self.send_activation_link(employee, magic_url)
+
     async def send_login_credentials(self, employee: Employee, frontend_url: str | None = None) -> dict[str, Any]:
-        return await self.send_magic_login(employee, frontend_url)
+        return await self.send_activation_link(employee, frontend_url)
 
     async def send_reminder(self, employee: Employee, task: KomandusTask, reminder_label: str) -> dict[str, Any]:
         if not employee.telegram_id:
@@ -118,8 +121,6 @@ class TelegramService:
     async def send_manager_notification(self, manager_chat_id: int | str, text: str) -> dict[str, Any]:
         return await self.send_message(manager_chat_id, f"Уведомление менеджеру:\n{text}")
 
-    async def send_product_manager_notification(self, product_manager_chat_id: int | str, text: str) -> dict[str, Any]:
-        return await self.send_message(product_manager_chat_id, f"Уведомление PM:\n{text}")
 
     async def get_chat(self, chat_id: int | str) -> dict[str, Any]:
         return await self._request("getChat", {"chat_id": chat_id})

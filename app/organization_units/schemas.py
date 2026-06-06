@@ -50,6 +50,7 @@ class OrganizationChatResponse(BaseModel):
     id: UUID
     organization_id: UUID
     department_id: UUID | None
+    team_id: UUID | None = None
     telegram_chat_id: int
     title: str
     chat_type: str | None
@@ -62,8 +63,27 @@ class OrganizationChatResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TaskSourceResponse(BaseModel):
+    id: UUID
+    organization_id: UUID
+    source_type: str
+    telegram_chat_id: int
+    telegram_topic_id: int | None = None
+    title: str
+    department_id: UUID | None = None
+    team_id: UUID | None = None
+    is_active: bool
+    ai_enabled: bool
+    metadata_json: dict | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ConnectCodeCreate(BaseModel):
     department_id: UUID | None = None
+    team_id: UUID | None = None
 
 
 class ConnectCodeResponse(BaseModel):
@@ -71,3 +91,33 @@ class ConnectCodeResponse(BaseModel):
     command: str
     expires_at: datetime | None = None
     instruction: list[str]
+
+
+class OrganizationModeResponse(BaseModel):
+    mode: str
+    hierarchy_setup_state: dict | None = None
+
+
+class HierarchyWizardState(BaseModel):
+    step: int = Field(ge=1, le=6)
+    departments_ready: bool = False
+    teams_ready: bool = False
+    managers_ready: bool = False
+    employees_distributed: bool = False
+    telegram_sources_ready: bool = False
+
+
+class HierarchyWizardUpdate(BaseModel):
+    step: int | None = Field(default=None, ge=1, le=6)
+    departments_ready: bool | None = None
+    teams_ready: bool | None = None
+    managers_ready: bool | None = None
+    employees_distributed: bool | None = None
+    telegram_sources_ready: bool | None = None
+
+
+class HierarchyWizardResponse(BaseModel):
+    mode: str
+    hierarchy_setup_state: HierarchyWizardState
+    can_confirm: bool
+    checklist: list[str]

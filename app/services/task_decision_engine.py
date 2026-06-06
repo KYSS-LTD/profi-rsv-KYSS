@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.audit.services import AuditService
 from app.auth.magic import MagicLoginService
-from app.common.enums import ConfirmationStatus, TaskStatus
-from app.models.models import Employee, KomandusTask, Message, Notification, OrganizationChat, TaskCandidate, TaskConfirmation, TelegramAccountLink, TelegramChat, TelegramConnectCode
+from app.common.enums import ConfirmationStatus, TaskSourceType, TaskStatus
+from app.models.models import Employee, KomandusTask, Message, Notification, OrganizationChat, TaskCandidate, TaskConfirmation, TaskSource, TelegramAccountLink, TelegramChat, TelegramConnectCode
 from app.services.kanban_adapter import KanbanAdapter
 from app.services.llm_service import llm_service
 from app.telegram.callbacks import TelegramCallbackRouter
@@ -67,8 +67,12 @@ class TaskDecisionEngine:
 
         self._upsert_chat(chat)
         db_message = self._save_message(msg)
+        topic_id = msg.get("message_thread_id")
+        task_source = self._task_source_for_message(chat_id, topic_id)
         org_chat = self.db.query(OrganizationChat).filter(OrganizationChat.telegram_chat_id == chat_id, OrganizationChat.ai_enabled.is_(True), OrganizationChat.is_active.is_(True)).first()
-        if org_chat is None and chat.get("type") in {"group", "supergroup", "channel"}:
+        if not task_source and org_chat:
+            task_source = self._ensure_task_source(org_chat.organization_id, chat_id, chat.get("title") or "Рабочий чат", chat.get("type"), None, org_chat.department_id, org_chat.team_id)
+        if (not task_source or not task_source.ai_enabled) and chat.get("type") in {"group", "supergroup", "channel"}:
             return {"status": "stored", "message_id": db_message.id, "ai_enabled": False}
         candidates = await self.process_chat_context(chat_id)
 
@@ -159,21 +163,46 @@ class TaskDecisionEngine:
             org_chat = OrganizationChat(organization_id=code_row.organization_id, telegram_chat_id=chat.get("id"), title=chat.get("title") or "Рабочий чат")
             self.db.add(org_chat)
         org_chat.department_id = code_row.department_id
+        org_chat.team_id = code_row.team_id
         org_chat.title = chat.get("title") or org_chat.title
         org_chat.chat_type = chat.get("type")
         org_chat.members_count = members_count
         org_chat.bot_is_admin = bot_is_admin
         org_chat.is_active = True
         org_chat.ai_enabled = True
+        topic_id = msg.get("message_thread_id")
+        task_source = self._ensure_task_source(code_row.organization_id, chat.get("id"), chat.get("title") or "Рабочий чат", chat.get("type"), topic_id, code_row.department_id, code_row.team_id)
         code_row.status = "USED"
         from datetime import datetime
         code_row.used_at = datetime.utcnow()
         self.db.commit()
         if bot_is_admin:
-            await self._send_message(chat.get("id"), "✅ Чат подключен к Командусу. AI-анализ сообщений включен.")
+            await self._send_message(chat.get("id"), f"✅ Источник задач подключен к Командусу: {task_source.title}. AI-анализ сообщений включен.")
         else:
             await self._send_message(chat.get("id"), "⚠️ Чат подключен, но бот не является администратором. Назначьте бота администратором, иначе часть функций Telegram будет недоступна.")
-        return {"status": "connected", "chat_id": chat.get("id"), "members_count": members_count, "bot_is_admin": bot_is_admin}
+        return {"status": "connected", "chat_id": chat.get("id"), "task_source_id": str(task_source.id), "members_count": members_count, "bot_is_admin": bot_is_admin}
+
+    def _task_source_for_message(self, chat_id: int, topic_id: int | None) -> TaskSource | None:
+        query = self.db.query(TaskSource).filter(TaskSource.telegram_chat_id == chat_id, TaskSource.is_active.is_(True))
+        if topic_id:
+            source = query.filter(TaskSource.source_type == TaskSourceType.TELEGRAM_TOPIC.value, TaskSource.telegram_topic_id == topic_id).first()
+            if source:
+                return source
+        return query.filter(TaskSource.source_type == TaskSourceType.TELEGRAM_CHAT.value, TaskSource.telegram_topic_id.is_(None)).first()
+
+    def _ensure_task_source(self, organization_id, chat_id: int, title: str, chat_type: str | None, topic_id: int | None, department_id, team_id) -> TaskSource:
+        source_type = TaskSourceType.TELEGRAM_TOPIC.value if topic_id else TaskSourceType.TELEGRAM_CHAT.value
+        source = self.db.query(TaskSource).filter(TaskSource.organization_id == organization_id, TaskSource.telegram_chat_id == chat_id, TaskSource.telegram_topic_id == topic_id, TaskSource.source_type == source_type).first()
+        if not source:
+            source = TaskSource(organization_id=organization_id, source_type=source_type, telegram_chat_id=chat_id, telegram_topic_id=topic_id, title=title, department_id=department_id, team_id=team_id, metadata_json={"chat_type": chat_type})
+            self.db.add(source)
+        source.title = title or source.title
+        source.department_id = department_id
+        source.team_id = team_id
+        source.ai_enabled = True
+        source.is_active = True
+        self.db.commit(); self.db.refresh(source)
+        return source
 
     def _upsert_chat(self, chat: dict) -> TelegramChat:
         telegram_chat_id = chat["id"]

@@ -104,6 +104,8 @@ class Organization(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    org_mode: Mapped[str] = mapped_column(String(32), default="SIMPLE", nullable=False)
+    hierarchy_setup_state: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
 
 
@@ -256,6 +258,7 @@ class OrganizationChat(Base):
     id: Mapped[uuid.UUID] = uuid_pk()
     organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
     department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
     telegram_chat_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     chat_type: Mapped[str | None] = mapped_column(String(64))
@@ -274,11 +277,29 @@ class TelegramConnectCode(Base):
     id: Mapped[uuid.UUID] = uuid_pk()
     organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
     department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
     code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime)
     used_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+class TaskSource(Base, TimestampMixin):
+    __tablename__ = "task_sources"
+    __table_args__ = (UniqueConstraint("organization_id", "source_type", "telegram_chat_id", "telegram_topic_id", name="uq_task_source_telegram"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    telegram_chat_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, nullable=False, index=True)
+    telegram_topic_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    ai_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
 
 class BoardIntegration(Base, TimestampMixin):
     __tablename__ = "board_integrations"
@@ -290,6 +311,8 @@ class BoardIntegration(Base, TimestampMixin):
     encrypted_api_token: Mapped[str] = mapped_column(Text, nullable=False)
     external_project_id: Mapped[str | None] = mapped_column(String(255))
     external_board_id: Mapped[str | None] = mapped_column(String(255))
+    department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
     webhook_secret_hash: Mapped[str | None] = mapped_column(String(128))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)

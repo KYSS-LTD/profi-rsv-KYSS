@@ -1,10 +1,10 @@
 import { BoardIntegration } from '../../entities/saas/types';
 import { apiClient } from './client';
 
-export function verifyYouGile(apiToken: string) {
+export function verifyYouGile(apiToken: string, scope?: { department_id?: string | null; team_id?: string | null }) {
   return apiClient<BoardIntegration>('/v2/boards/yougile/verify', {
     method: 'POST',
-    body: JSON.stringify({ api_token: apiToken }),
+    body: JSON.stringify({ api_token: apiToken, ...scope }),
   });
 }
 

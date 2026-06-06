@@ -10,12 +10,15 @@ class TelegramNotificationService:
         self.db = db
         self.telegram = telegram or TelegramService()
 
-    async def send_employee_magic_login(self, employee: Employee):
-        magic_url = None
+    async def send_employee_activation_link(self, employee: Employee):
+        activation_url = None
         if employee.user_id:
             token = MagicLoginService(self.db).create_token(employee.user_id)
-            magic_url = MagicLoginService(self.db).build_magic_login_url(token.token)
-        return await self.telegram.send_magic_login(employee, magic_url)
+            activation_url = MagicLoginService(self.db).build_activation_url(token.token)
+        return await self.telegram.send_activation_link(employee, activation_url)
+
+    async def send_employee_magic_login(self, employee: Employee):
+        return await self.send_employee_activation_link(employee)
 
     async def send_task_confirmation(self, employee: Employee, task: KomandusTask):
         return await self.telegram.send_task_confirmation(employee, task)

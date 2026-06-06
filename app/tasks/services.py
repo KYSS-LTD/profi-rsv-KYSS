@@ -40,10 +40,16 @@ class V2TaskService:
         return task
 
     def create_from_llm(self, *, organization_id, employee_id, title, description, source_chat_id, source_message_id, confidence, llm_model, extraction_version, department_id=None, team_id=None, organization_chat_id=None, source_excerpt=None):
-        status = TaskStatus.ACCEPTED.value if confidence >= 0.85 else TaskStatus.PENDING_CONFIRMATION.value
+        if confidence > 0.90:
+            status = TaskStatus.ACCEPTED.value
+        elif confidence >= 0.70:
+            status = TaskStatus.PENDING_CONFIRMATION.value
+        else:
+            status = TaskStatus.DETECTED.value
         task = KomandusTask(organization_id=organization_id, employee_id=employee_id, department_id=department_id, team_id=team_id, organization_chat_id=organization_chat_id, title=title, description=description, source_chat_id=source_chat_id, source_message_id=source_message_id, llm_confidence=confidence, llm_model=llm_model, extraction_version=extraction_version, status=status, ai_summary=description, source_excerpt=source_excerpt or description)
         self.repo.save(task)
-        self._send_task_confirmation_if_possible(task)
+        if confidence > 0.90:
+            self._send_task_confirmation_if_possible(task)
         confirmation = TaskConfirmation(organization_id=organization_id, task_id=task.id, employee_id=employee_id, status=ConfirmationStatus.PENDING.value)
         self.db.add(confirmation); self.db.commit()
         increment("task_detection_total")
@@ -92,6 +98,8 @@ class V2TaskService:
             increment("task_accept_total")
             action = "Accept Task"
         else:
+            if not reason or not reason.strip():
+                raise HTTPException(status_code=422, detail="Decline reason is required")
             task.status = TaskStatus.REJECTED.value
             task.rejected_at = datetime.utcnow()
             confirmation.status = ConfirmationStatus.DECLINED.value
@@ -99,5 +107,28 @@ class V2TaskService:
             increment("task_reject_total")
             action = "Reject Task"
         self.db.commit(); self.db.refresh(task)
+        if not approved:
+            self._notify_rejection(task, reason)
         self.audit.log(action=action, organization_id=task.organization_id, user_id=user.id, entity_type="Task", entity_id=task.id, metadata={"reason": reason})
         return task
+
+
+    def _notify_rejection(self, task: KomandusTask, reason: str | None) -> None:
+        if not task.employee_id:
+            return
+        employee = self.db.query(Employee).filter(Employee.id == task.employee_id).first()
+        recipients: list[int] = []
+        if employee and employee.manager_id:
+            manager = self.db.query(Employee).filter(Employee.id == employee.manager_id).first()
+            if manager and manager.telegram_id:
+                recipients.append(manager.telegram_id)
+        if task.current_owner_user_id:
+            owner_employee = self.db.query(Employee).filter(Employee.user_id == task.current_owner_user_id).first()
+            if owner_employee and owner_employee.telegram_id:
+                recipients.append(owner_employee.telegram_id)
+        text = f"❌ Задача отклонена: {task.title}\nПричина: {reason or 'не указана'}"
+        for chat_id in set(recipients):
+            try:
+                asyncio.run(self.telegram.send_manager_notification(chat_id, text))
+            except TelegramDeliveryError:
+                continue

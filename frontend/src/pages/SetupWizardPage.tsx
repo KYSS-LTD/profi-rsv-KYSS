@@ -1,9 +1,9 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircle2, KeyRound, MessageCircle, Send, UsersRound } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, GitBranch, KeyRound, MessageCircle, Send, UsersRound } from 'lucide-react';
 import { useState } from 'react';
 import { verifyYouGile } from '../shared/api/boardsV2';
 import { getEmployees } from '../shared/api/employeesV2';
-import { createTelegramConnectCode, getDepartments, getOrganizationChats } from '../shared/api/orgV2';
+import { confirmHierarchyMode, createTelegramConnectCode, getDepartments, getOrganizationChats, getOrganizationMode, getTaskSources, startHierarchyWizard, updateHierarchyWizard } from '../shared/api/orgV2';
 import { Badge } from '../shared/ui/Badge';
 import { Button } from '../shared/ui/Button';
 import { Card } from '../shared/ui/Card';
@@ -12,20 +12,35 @@ import { PageHeader } from '../shared/ui/PageHeader';
 import { Select } from '../shared/ui/Select';
 
 export function SetupWizardPage() {
+  const queryClient = useQueryClient();
   const [step, setStep] = useState(1);
   const [departmentId, setDepartmentId] = useState('');
   const [token, setToken] = useState('');
+  const { data: mode } = useQuery({ queryKey: ['v2', 'org', 'mode'], queryFn: getOrganizationMode });
   const { data: departments = [] } = useQuery({ queryKey: ['v2', 'departments'], queryFn: getDepartments });
   const { data: chats = [] } = useQuery({ queryKey: ['v2', 'chats'], queryFn: getOrganizationChats });
+  const { data: sources = [] } = useQuery({ queryKey: ['v2', 'task-sources'], queryFn: getTaskSources });
   const { data: employees = [] } = useQuery({ queryKey: ['v2', 'employees'], queryFn: getEmployees });
-  const codeMutation = useMutation({ mutationFn: () => createTelegramConnectCode(departmentId || null) });
+  const codeMutation = useMutation({ mutationFn: () => createTelegramConnectCode(departmentId || null), onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2', 'task-sources'] }) });
   const yougileMutation = useMutation({ mutationFn: () => verifyYouGile(token) });
-  return <><PageHeader eyebrow="Setup Wizard" title="Первичная настройка Командуса" description="5 шагов после регистрации: Telegram, сотрудники, YouGile, выбор доски и маппинг колонок." />
+  const startWizardMutation = useMutation({ mutationFn: startHierarchyWizard, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2', 'org', 'mode'] }) });
+  const updateWizardMutation = useMutation({ mutationFn: updateHierarchyWizard, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2', 'org', 'mode'] }) });
+  const confirmWizardMutation = useMutation({ mutationFn: confirmHierarchyMode, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2', 'org', 'mode'] }) });
+  const wizardState = (mode?.hierarchy_setup_state ?? {}) as Record<string, boolean | number>;
+
+  return <><PageHeader eyebrow="Settings → Структура организации" title="Настройки Командуса" description="Onboarding, Telegram, YouGile и переход от Simple Organization к Hierarchy Mode без поломки текущей работы." />
+    <Card className="mb-6"><WizardTitle icon={<GitBranch />} title="Режим организации" />
+      <div className="grid gap-4 lg:grid-cols-[1fr_auto]"><div><p className="text-sm text-stone-500">Текущий режим</p><p className="mt-1 text-2xl font-semibold text-stone-950">{mode?.mode === 'HIERARCHY' ? 'Hierarchy Organization' : 'Simple Organization'}</p><p className="mt-2 text-sm leading-6 text-stone-500">Simple подходит компаниям до 30 сотрудников: без отделов, команд и делегаций; менеджер видит всю компанию. Hierarchy включает departments, teams, manager tree, responsibility areas и delegations.</p></div><Button onClick={() => startWizardMutation.mutate()} disabled={mode?.mode === 'HIERARCHY'}>Перейти на организационную структуру</Button></div>
+      {mode?.hierarchy_setup_state && mode.mode !== 'HIERARCHY' && <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{[
+        ['departments_ready', 'Шаг 1: создать отделы'], ['teams_ready', 'Шаг 2: создать команды'], ['managers_ready', 'Шаг 3: назначить руководителей'], ['employees_distributed', 'Шаг 4: распределить сотрудников'], ['telegram_sources_ready', 'Шаг 5: привязать Telegram источники']
+      ].map(([key, label]) => <label key={key} className="flex items-center gap-3 rounded-2xl bg-stone-50 p-4 text-sm"><input type="checkbox" checked={Boolean(wizardState[key])} onChange={(event) => updateWizardMutation.mutate({ [key]: event.target.checked } as Parameters<typeof updateHierarchyWizard>[0])} />{label}</label>)}<Button onClick={() => confirmWizardMutation.mutate()} className="md:col-span-2 xl:col-span-3">Шаг 6: подтвердить структуру</Button></div>}
+      {confirmWizardMutation.error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">Нельзя включить Hierarchy Mode: завершите все шаги мастера.</p>}
+    </Card>
     <div className="mb-6 flex flex-wrap gap-2">{[1,2,3,4,5].map((n) => <Button key={n} variant={step === n ? 'primary' : 'secondary'} onClick={() => setStep(n)}>Шаг {n}</Button>)}</div>
-    {step === 1 && <Card><WizardTitle icon={<MessageCircle />} title="Подключение Telegram-чата" /><div className="grid gap-4 md:grid-cols-[1fr_auto]"><Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}><option value="">Отдел для чата</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select><Button onClick={() => codeMutation.mutate()}><Send className="h-4 w-4" />Подключить чат</Button></div>{codeMutation.data && <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5"><p className="text-3xl font-semibold text-stone-950">{codeMutation.data.code}</p><ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-stone-700">{codeMutation.data.instruction.map((item) => <li key={item}>{item}</li>)}</ol></div>}<div className="mt-5 space-y-2">{chats.map((chat) => <div key={chat.id} className="flex items-center justify-between rounded-2xl bg-stone-50 px-4 py-3"><span>{chat.title}</span><Badge tone={chat.ai_enabled ? 'green' : 'neutral'}>{chat.ai_enabled ? 'AI включен' : 'AI выключен'}</Badge></div>)}</div></Card>}
-    {step === 2 && <Card><WizardTitle icon={<UsersRound />} title="Сотрудники" /><p className="text-sm text-stone-500">Telegram ID больше не вводится вручную. Добавьте ФИО, email, роль, отдел, команду и @username на странице «Команда».</p><div className="mt-5 grid gap-3 md:grid-cols-3">{employees.map((e) => <div key={e.id} className="rounded-2xl bg-stone-50 p-4"><p className="font-medium">{e.full_name}</p><p className="text-sm text-stone-500">{e.telegram_username}</p><Badge tone={e.telegram_status === 'CONNECTED' ? 'green' : 'amber'}>{e.telegram_status === 'CONNECTED' ? 'Подключен' : 'Ожидает подключения'}</Badge></div>)}</div></Card>}
-    {step === 3 && <Card><WizardTitle icon={<KeyRound />} title="YouGile API Token" /><div className="flex gap-3"><Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="API Token" /><Button onClick={() => yougileMutation.mutate()}>Проверить токен</Button></div>{yougileMutation.data && <p className="mt-4 text-sm text-emerald-700">Токен проверен, интеграция создана.</p>}</Card>}
-    {step === 4 && <Card><WizardTitle icon={<CheckCircle2 />} title="Выбор проекта и доски" /><p className="text-sm text-stone-500">После проверки YouGile backend получает проекты, доски, колонки и пользователей. Выберите рабочую доску в интеграциях.</p></Card>}
+    {step === 1 && <Card><WizardTitle icon={<MessageCircle />} title="Подключение Telegram-источников" /><div className="grid gap-4 md:grid-cols-[1fr_auto]"><Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}><option value="">Отдел для чата/topic</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select><Button onClick={() => codeMutation.mutate()}><Send className="h-4 w-4" />Подключить источник</Button></div>{codeMutation.data && <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-5"><p className="text-3xl font-semibold text-stone-950">{codeMutation.data.code}</p><ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-stone-700">{codeMutation.data.instruction.map((item) => <li key={item}>{item}</li>)}</ol></div>}<div className="mt-5 space-y-2">{sources.map((source) => <div key={source.id} className="flex items-center justify-between rounded-2xl bg-stone-50 px-4 py-3"><span>{source.title}</span><Badge tone={source.ai_enabled ? 'green' : 'neutral'}>{source.source_type === 'TELEGRAM_TOPIC' ? 'Topic' : 'Chat'}</Badge></div>)}{!sources.length && chats.map((chat) => <div key={chat.id} className="flex items-center justify-between rounded-2xl bg-stone-50 px-4 py-3"><span>{chat.title}</span><Badge tone={chat.ai_enabled ? 'green' : 'neutral'}>{chat.ai_enabled ? 'AI включен' : 'AI выключен'}</Badge></div>)}</div></Card>}
+    {step === 2 && <Card><WizardTitle icon={<UsersRound />} title="Сотрудники" /><p className="text-sm text-stone-500">Telegram ID не вводится вручную. Менеджер добавляет ФИО, email, роль, должность и @username; сотрудник сам пишет /start боту, после чего Командус привязывает telegram_id.</p><div className="mt-5 grid gap-3 md:grid-cols-3">{employees.map((e) => <div key={e.id} className="rounded-2xl bg-stone-50 p-4"><p className="font-medium">{e.full_name}</p><p className="text-sm text-stone-500">{e.telegram_username}</p><Badge tone={e.telegram_status === 'CONNECTED' ? 'green' : 'amber'}>{e.telegram_status === 'CONNECTED' ? 'Telegram Connected' : 'Ожидает /start'}</Badge></div>)}</div></Card>}
+    {step === 3 && <Card><WizardTitle icon={<KeyRound />} title="YouGile API Token" /><div className="flex gap-3"><Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="API Token" /><Button onClick={() => yougileMutation.mutate()}>Проверить токен</Button></div>{yougileMutation.data && <p className="mt-4 text-sm text-emerald-700">Токен проверен, интеграция создана. Доски можно привязать к Team или Department.</p>}</Card>}
+    {step === 4 && <Card><WizardTitle icon={<CheckCircle2 />} title="Доски YouGile" /><p className="text-sm text-stone-500">Поддерживается несколько досок: Backend Board, DevOps Board, Sales Board, Marketing Board. Привязка выполняется через Team → Board или Department → Board.</p></Card>}
     {step === 5 && <Card><WizardTitle icon={<CheckCircle2 />} title="Маппинг колонок" /><div className="grid gap-3 md:grid-cols-4">{['To Do','In Progress','Review','Done'].map((item) => <div key={item} className="rounded-2xl bg-stone-50 p-4 text-center font-medium">{item}</div>)}</div></Card>}
   </>;
 }

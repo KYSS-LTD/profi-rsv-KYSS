@@ -15,8 +15,13 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     return AuthService(db).login(payload.email, payload.password, response)
 
 
-@router.post("/magic-login", response_model=TokenResponse, summary="Magic login", description="Consume a one-time Telegram magic login token and authenticate the user.")
+@router.post("/magic-login", response_model=TokenResponse, summary="Magic login", description="Backward-compatible alias for activation token login.")
 def magic_login(payload: MagicLoginRequest, response: Response, db: Session = Depends(get_db)):
+    return AuthService(db).magic_login(payload.token, response)
+
+
+@router.post("/activate", response_model=TokenResponse, summary="Activate account", description="Consume an activation token and let the employee set their own password.")
+def activate(payload: MagicLoginRequest, response: Response, db: Session = Depends(get_db)):
     return AuthService(db).magic_login(payload.token, response)
 
 

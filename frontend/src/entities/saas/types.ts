@@ -41,6 +41,7 @@ export type OrganizationChat = {
   id: string;
   organization_id: string;
   department_id?: string | null;
+  team_id?: string | null;
   telegram_chat_id: number;
   title: string;
   chat_type?: string | null;
@@ -114,6 +115,8 @@ export type BoardIntegration = {
   name: string;
   external_project_id?: string | null;
   external_board_id?: string | null;
+  department_id?: string | null;
+  team_id?: string | null;
   is_active: boolean;
   metadata_json?: Record<string, unknown> | null;
 };

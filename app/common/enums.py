@@ -39,6 +39,16 @@ class PermissionScope(StrEnum):
     SETTINGS = "settings"
 
 
+class OrganizationMode(StrEnum):
+    SIMPLE = "SIMPLE"
+    HIERARCHY = "HIERARCHY"
+
+
+class TaskSourceType(StrEnum):
+    TELEGRAM_CHAT = "TELEGRAM_CHAT"
+    TELEGRAM_TOPIC = "TELEGRAM_TOPIC"
+
+
 class TaskStatus(StrEnum):
     DETECTED = "DETECTED"
     PENDING_CONFIRMATION = "PENDING_CONFIRMATION"
