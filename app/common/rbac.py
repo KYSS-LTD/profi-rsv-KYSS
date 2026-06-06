@@ -5,14 +5,7 @@ from fastapi import Depends, HTTPException, status
 from app.auth.dependencies import get_current_user
 from app.common.enums import Permission, PermissionScope, Role
 
-LEGACY_ROLE_MAP: dict[str, Role] = {
-    "SUPER_ADMIN": Role.OWNER,
-    "ORG_OWNER": Role.OWNER,
-    "DEPARTMENT_MANAGER": Role.MANAGER,
-    "TEAM_LEAD": Role.MANAGER,
-    "PRODUCT_MANAGER": Role.ADMIN,
-    "VIEWER": Role.OBSERVER,
-}
+ALLOWED_ROLE_VALUES = {role.value for role in Role}
 
 ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
     Role.OWNER: set(Permission),
@@ -58,11 +51,16 @@ ROLE_ORDER = {Role.OBSERVER: 10, Role.EMPLOYEE: 20, Role.MANAGER: 50, Role.ADMIN
 
 
 def normalize_role(role: str | Role) -> Role:
+    """Return one of the only allowed technical access roles.
+
+    Business titles such as Team Lead, Head of Sales, HR Specialist, etc.
+    belong to Position/position fields and must never be normalized into RBAC.
+    """
     if isinstance(role, Role):
         return role
     value = str(role)
-    if value in LEGACY_ROLE_MAP:
-        return LEGACY_ROLE_MAP[value]
+    if value not in ALLOWED_ROLE_VALUES:
+        raise ValueError(f"Unsupported Komandus role: {value}. Use Position for business titles.")
     return Role(value)
 
 

@@ -3,7 +3,7 @@ import pytest
 pytest.importorskip("fastapi")
 
 from app.common.enums import Permission, Role
-from app.common.rbac import has_permission, normalize_role, permission_values_for_role
+from app.common.rbac import has_permission, normalize_role
 from app.telegram.service import TelegramService
 
 
@@ -16,13 +16,10 @@ def test_role_permissions_use_five_system_roles_and_scopes():
     assert not has_permission(Role.EMPLOYEE, Permission.CAN_CREATE_EMPLOYEE)
 
 
-def test_legacy_roles_normalize_into_five_role_model():
-    assert normalize_role("ORG_OWNER") == Role.OWNER
-    assert normalize_role("DEPARTMENT_MANAGER") == Role.MANAGER
-    assert normalize_role("TEAM_LEAD") == Role.MANAGER
-    assert normalize_role("PRODUCT_MANAGER") == Role.ADMIN
-    assert normalize_role("VIEWER") == Role.OBSERVER
-    assert Permission.CAN_MANAGE_INTEGRATIONS.value in permission_values_for_role("PRODUCT_MANAGER")
+def test_forbidden_business_roles_are_rejected():
+    for forbidden in ["ORG_OWNER", "DEPARTMENT_MANAGER", "TEAM_LEAD", "PRODUCT_MANAGER", "VIEWER", "HR_MANAGER", "SALES_MANAGER"]:
+        with pytest.raises(ValueError, match="Use Position"):
+            normalize_role(forbidden)
 
 
 def test_telegram_button_urls_require_https_public_host(monkeypatch):
