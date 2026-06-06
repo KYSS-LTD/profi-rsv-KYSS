@@ -4,7 +4,7 @@ from datetime import date
 
 from app.core.celery_app import celery_app
 from app.core.database import SessionLocal
-from app.models.models import AnalyticsSnapshot
+from app.models.models import AnalyticsSnapshot, KomandusTask
 from app.analytics.services import AnalyticsService
 from app.models.models import Organization
 
@@ -14,7 +14,17 @@ RETRY_KWARGS = {"autoretry_for": (Exception,), "retry_backoff": True, "retry_jit
 
 @celery_app.task(name="app.tasks.sync_task_to_yougile", **RETRY_KWARGS)
 def sync_task_to_yougile(task_id: str):
-    return {"queued": True, "task_id": task_id}
+    from app.tasks.services import V2TaskService
+
+    db = SessionLocal()
+    try:
+        task = db.query(KomandusTask).filter(KomandusTask.id == task_id).first()
+        if not task:
+            return {"status": "not_found", "task_id": task_id}
+        V2TaskService(db).sync_to_yougile(task)
+        return {"status": "ok", "task_id": task_id, "external_task_id": task.external_task_id}
+    finally:
+        db.close()
 
 
 @celery_app.task(name="app.tasks.send_deadline_reminders", **RETRY_KWARGS)

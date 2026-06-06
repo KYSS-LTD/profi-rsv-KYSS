@@ -52,15 +52,33 @@ class TaskSourceType(StrEnum):
 
 
 class TaskStatus(StrEnum):
+    # MVP lifecycle for real tasks. Task candidates still use DETECTED /
+    # PENDING_CONFIRMATION / REJECTED before they become a KomandusTask.
     DETECTED = "DETECTED"
     PENDING_CONFIRMATION = "PENDING_CONFIRMATION"
-    ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
-    TO_DO = "TO_DO"
+    OPEN = "OPEN"
     IN_PROGRESS = "IN_PROGRESS"
-    REVIEW = "REVIEW"
     DONE = "DONE"
-    OVERDUE = "OVERDUE"
+    CANCELLED = "CANCELLED"
+
+    # Backward-compatible aliases for rows and UI code created before the MVP
+    # status simplification. New writes should use OPEN / IN_PROGRESS / DONE /
+    # CANCELLED only.
+    ACCEPTED = "OPEN"
+    TO_DO = "OPEN"
+    REVIEW = "IN_PROGRESS"
+    OVERDUE = "OPEN"
+
+    @classmethod
+    def _missing_(cls, value):
+        legacy = {
+            "ACCEPTED": cls.OPEN,
+            "TO_DO": cls.OPEN,
+            "REVIEW": cls.IN_PROGRESS,
+            "OVERDUE": cls.OPEN,
+        }
+        return legacy.get(value)
 
 
 class ConfirmationStatus(StrEnum):

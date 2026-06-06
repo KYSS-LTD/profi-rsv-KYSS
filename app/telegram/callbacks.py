@@ -20,7 +20,7 @@ class TelegramCallbackRouter:
         callback_id = callback["id"]
         from_user = callback.get("from") or {}
         fake_msg = {"chat": {"id": chat_id, "type": "private"}, "from": from_user}
-        mapping = {"tasks": "/mytasks", "today": "/today", "week": "/week", "status": "/status", "stats": "/stats", "settings": "/settings", "help": "/help", "login": "/login"}
+        mapping = {"tasks": "/mytasks", "status": "/status", "help": "/help"}
         if action in mapping:
             await self.engine.telegram.answer_callback_query(callback_id)
             return await self.commands._employee_command(fake_msg, mapping[action])

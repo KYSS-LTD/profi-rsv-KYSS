@@ -31,7 +31,8 @@ class AnalyticsService:
         employees = {employee.id: employee for employee in visible_employees}
         departments = {department.id: department for department in self.scope.get_visible_departments(user).all()}
         total = len(tasks)
-        in_work = sum(1 for task in tasks if task.status in {TaskStatus.ACCEPTED.value, TaskStatus.TO_DO.value, TaskStatus.IN_PROGRESS.value, TaskStatus.REVIEW.value})
+        open_tasks = sum(1 for task in tasks if task.status == TaskStatus.OPEN.value)
+        in_work = sum(1 for task in tasks if task.status == TaskStatus.IN_PROGRESS.value)
         completed = sum(1 for task in tasks if task.status == TaskStatus.DONE.value)
         overdue = sum(1 for task in tasks if task.status == TaskStatus.OVERDUE.value)
         rejected = sum(1 for task in tasks if task.status == TaskStatus.REJECTED.value)
@@ -64,6 +65,7 @@ class AnalyticsService:
             activity.append({"at": task.updated_at.isoformat(), "text": f"{employee_name}: {task.title} → {task.status}"})
         return {
             "total_tasks": total,
+            "open": open_tasks,
             "in_work": in_work,
             "completed": completed,
             "overdue": overdue,

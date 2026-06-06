@@ -71,6 +71,8 @@ export type Employee = {
   telegram_status: 'PENDING' | 'CONNECTED' | 'NOT_FOUND' | string;
   telegram_connected_at?: string | null;
   telegram_id?: number | null;
+  telegram_user_id?: number | null;
+  telegram_connected?: boolean;
   generated_password?: string | null;
   invitation_text?: string | null;
   active?: boolean;
@@ -79,7 +81,7 @@ export type Employee = {
   deactivated_by?: string | null;
 };
 
-export type TaskStatusV2 = 'DETECTED' | 'PENDING_CONFIRMATION' | 'ACCEPTED' | 'REJECTED' | 'TO_DO' | 'IN_PROGRESS' | 'REVIEW' | 'DONE' | 'OVERDUE';
+export type TaskStatusV2 = 'DETECTED' | 'PENDING_CONFIRMATION' | 'REJECTED' | 'OPEN' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED' | 'ACCEPTED' | 'TO_DO' | 'REVIEW' | 'OVERDUE';
 
 export type KomandusTask = {
   id: string;
