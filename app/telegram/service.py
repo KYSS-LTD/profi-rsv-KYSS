@@ -87,13 +87,13 @@ class TelegramService:
         if not employee.telegram_id:
             raise TelegramDeliveryError(f"Employee {employee.id} has no telegram_user_id. Ask them to send /start to the bot.")
         text = (
-            "<b>Новая задача</b>\n\n"
+            "<b>Найдена задача:</b>\n\n"
             f"<b>Название:</b> {self._escape(task.title)}\n"
-            f"<b>Описание:</b> {self._escape(task.description or '—')}\n"
-            f"<b>Источник:</b> Telegram {task.source_chat_id or '—'}\n"
-            f"<b>Дедлайн:</b> {task.due_at.isoformat() if task.due_at else '—'}"
+            f"<b>Срок:</b> {task.due_at.isoformat() if task.due_at else '—'}\n"
+            f"<b>Исполнитель:</b> {self._escape(employee.full_name)}\n"
+            f"<b>Описание:</b> {self._escape(task.description or '—')}"
         )
-        markup = {"inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"task_accept:{task.id}"}, {"text": "❌ Отказаться", "callback_data": f"task_reject:{task.id}"}], [{"text": "💬 Уточнить", "callback_data": f"task_clarify:{task.id}"}]]}
+        markup = {"inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"task_accept:{task.id}"}, {"text": "❌ Отклонить", "callback_data": f"task_reject:{task.id}"}]]}
         return await self.send_html_message(employee.telegram_id, text, reply_markup=markup)
 
     async def send_activation_link(self, employee: Employee, activation_url: str | None) -> dict[str, Any]:

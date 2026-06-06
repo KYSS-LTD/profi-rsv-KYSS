@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -11,7 +12,7 @@ from app.common.security import encrypt_secret
 from app.common.access_scope import AccessScopeService
 from app.common.enums import OrganizationMode, Role
 from app.common.rbac import normalize_role
-from app.models.models import BoardIntegration, BoardMapping, ColumnMapping, EmployeeBoardMapping, Organization, Team, ProcessedWebhookEvent
+from app.models.models import BoardIntegration, BoardMapping, ColumnMapping, EmployeeBoardMapping, KomandusTask, Organization, Team, ProcessedWebhookEvent
 from app.yougile.provider import YouGileProvider
 
 
@@ -78,8 +79,38 @@ class BoardService:
         if existing:
             return False
         self.db.add(ProcessedWebhookEvent(organization_id=user_org, provider=provider, event_id=event_id, payload_hash=payload_hash))
+        self._apply_yougile_task_webhook(payload, user_org)
         self.db.commit()
         return True
+
+    def _apply_yougile_task_webhook(self, payload: bytes, organization_id) -> None:
+        try:
+            data = json.loads(payload.decode() or "{}")
+        except Exception:
+            return
+        task_data = data.get("task") or data.get("data") or data
+        external_task_id = str(task_data.get("id") or task_data.get("taskId") or task_data.get("_id") or "")
+        if not external_task_id:
+            return
+        task = (
+            self.db.query(KomandusTask)
+            .filter(KomandusTask.organization_id == organization_id, KomandusTask.external_task_id == external_task_id)
+            .first()
+        )
+        if not task:
+            return
+        column_id = task_data.get("columnId") or task_data.get("column_id")
+        if column_id:
+            mapping = (
+                self.db.query(ColumnMapping)
+                .filter(ColumnMapping.organization_id == organization_id, ColumnMapping.external_column_id == str(column_id))
+                .first()
+            )
+            if mapping:
+                task.status = mapping.task_status
+        completed = task_data.get("completed")
+        if completed is True:
+            task.status = "DONE"
 
 
     def _validate_mapping_scope(self, department_id: UUID | None, team_id: UUID | None, user) -> None:

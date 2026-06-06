@@ -192,6 +192,8 @@ class EmployeeService:
             "telegram_status": employee.telegram_status,
             "telegram_connected_at": employee.telegram_connected_at,
             "telegram_id": employee.telegram_id,
+            "telegram_user_id": employee.telegram_id,
+            "telegram_connected": bool(employee.telegram_id and employee.telegram_status == "CONNECTED"),
             "active": employee.active,
             "deactivated_at": employee.deactivated_at,
             "deactivated_by": employee.deactivated_by,

@@ -48,6 +48,8 @@ class EmployeeResponse(BaseModel):
     telegram_status: str
     telegram_connected_at: datetime | None
     telegram_id: int | None
+    telegram_user_id: int | None = None
+    telegram_connected: bool = False
     active: bool = True
     is_active: bool
     deactivated_at: datetime | None = None
