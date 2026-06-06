@@ -1,0 +1,171 @@
+import type { Analytics, LeaderboardUser, MeetingSummary, Profile, Task, TaskCandidate } from './types';
+
+export const mockTasks: Task[] = [
+  {
+    id: 'task-101',
+    title: 'Сверить backlog после встречи с заказчиком',
+    assignee: 'Иван',
+    deadline: '2026-06-08',
+    priority: 'high',
+    source: 'meeting',
+    confidence: 0.91,
+    externalUrl: 'https://t.me/c/123/456',
+    status: 'in_progress',
+    createdByAi: true,
+    sourceExcerpt: 'Иван, после созвона надо быстро обновить backlog и вынести риски отдельно.',
+    kanbanProvider: 'Командус Board',
+  },
+  {
+    id: 'task-102',
+    title: 'Подготовить демо Telegram Mini App',
+    assignee: 'Даниил',
+    deadline: '2026-06-07',
+    priority: 'critical',
+    source: 'telegram',
+    confidence: 0.88,
+    status: 'todo',
+    createdByAi: true,
+    sourceExcerpt: 'Нужна mini app версия фронта, чтобы показать dashboard прямо в Telegram.',
+    kanbanProvider: 'Командус Board',
+  },
+  {
+    id: 'task-103',
+    title: 'Согласовать формат initData для backend auth',
+    assignee: 'Артём',
+    deadline: '2026-06-09',
+    priority: 'medium',
+    source: 'ai',
+    confidence: 0.83,
+    status: 'review',
+    createdByAi: true,
+    sourceExcerpt: 'Backend должен валидировать Telegram initData перед выдачей пользовательского dashboard.',
+  },
+  {
+    id: 'task-104',
+    title: 'Залить summary встречи в Knowledge Base',
+    assignee: 'Павел',
+    deadline: '2026-06-11',
+    priority: 'medium',
+    source: 'meeting',
+    confidence: 0.78,
+    status: 'backlog',
+    createdByAi: true,
+    sourceExcerpt: 'После ASR нужно сохранять тезисы как knowledge item для будущих ответов бота.',
+  },
+  {
+    id: 'task-105',
+    title: 'Проверить empty states на мобильном экране',
+    assignee: 'Иван',
+    deadline: '2026-06-10',
+    priority: 'low',
+    source: 'manual',
+    confidence: 1,
+    status: 'done',
+    createdByAi: false,
+    sourceExcerpt: 'UI должен быть понятным даже без данных backend.',
+  },
+];
+
+export const mockCandidates: TaskCandidate[] = [
+  {
+    id: 'candidate-201',
+    title: 'Добавить уведомления о просроченных задачах',
+    description: 'AI нашёл в чате просьбу напоминать команде о задачах с истекшим дедлайном.',
+    confidence: 0.87,
+    source: 'telegram',
+    excerpt: 'Давайте бот будет сам писать, если дедлайн уже сегодня или вчера.',
+    suggestedAssignee: 'Даниил',
+    suggestedDeadline: '2026-06-12',
+    status: 'pending',
+  },
+  {
+    id: 'candidate-202',
+    title: 'Показать качество транскрипта встречи',
+    description: 'Из встречи следует, что demo должно объяснять, насколько точен ASR.',
+    confidence: 0.81,
+    source: 'meeting',
+    excerpt: 'Нужно, чтобы заказчик видел confidence по transcript quality.',
+    suggestedAssignee: 'Алексей',
+    suggestedDeadline: '2026-06-13',
+    status: 'pending',
+  },
+  {
+    id: 'candidate-203',
+    title: 'Сделать compact mode для Telegram',
+    description: 'Для Mini App нужен более плотный режим карточек на узких экранах.',
+    confidence: 0.74,
+    source: 'voice',
+    excerpt: 'В Telegram на телефоне карточки слишком длинные — нужен компактный режим.',
+    suggestedAssignee: 'Иван',
+    suggestedDeadline: '2026-06-10',
+    status: 'pending',
+  },
+];
+
+export const mockMeetingSummary: MeetingSummary = {
+  id: 'meeting-demo',
+  title: 'Demo sync — Командус',
+  shortSummary: 'Команда согласовала demo-flow: Telegram bot собирает сообщения и встречи, backend отдаёт задачи, frontend показывает dashboard, AI suggestions и аналитику.',
+  decisions: [
+    'Mini App должен открываться внутри Telegram без отдельной авторизации.',
+    'Frontend передаёт Telegram initData в backend для проверки пользователя.',
+    'Для demo включается fallback mock mode, чтобы UI не зависел от backend.',
+  ],
+  actionItems: [
+    'Собрать PWA manifest и service worker.',
+    'Добавить mobile-first navigation для Telegram.',
+    'Проверить endpoints /tasks, /task-candidates, /meetings, /analytics.',
+  ],
+  risks: [
+    'Telegram Mini App требует HTTPS на production-домене.',
+    'initData нельзя доверять без server-side проверки hash.',
+  ],
+  openQuestions: [
+    'Какая финальная ссылка backend API будет в production?',
+    'Нужен ли отдельный role-based экран для администратора команды?',
+  ],
+  createdTasks: 4,
+  createdCandidates: 3,
+  transcriptQuality: 0.89,
+  knowledgePreview: [
+    'Командус работает как AI project manager для командных чатов.',
+    'Основной фронтовый сценарий: Tasks → AI Suggestions → Meetings → Analytics.',
+    'Mini App использует Telegram themeParams и initData.',
+  ],
+};
+
+export const mockAnalytics: Analytics = {
+  aiCreatedTasks: 18,
+  autoConfirmed: 11,
+  waitingConfirmation: 3,
+  rejectedSuggestions: 4,
+  voiceMessagesProcessed: 9,
+  meetingsSummarized: 5,
+  averageConfidence: 0.86,
+  doneThisWeek: 24,
+  overduePercent: 8,
+  teamVelocity: 31,
+  aiQuality: 92,
+};
+
+export const mockLeaderboard: LeaderboardUser[] = [
+  { id: 'u1', name: 'Иван', role: 'Frontend', score: 96, done: 14 },
+  { id: 'u2', name: 'Даниил', role: 'Backend', score: 91, done: 12 },
+  { id: 'u3', name: 'Павел', role: 'LLM', score: 84, done: 8 },
+  { id: 'u4', name: 'Алексей', role: 'ML / ASR', score: 79, done: 7 },
+];
+
+export const mockProfile: Profile = {
+  id: 'tg-user-demo',
+  name: 'Telegram User',
+  role: 'Project contributor',
+  telegram: '@telegram_user',
+  focus: 'Быстро закрывать задачи, которые AI достаёт из командного общения.',
+  achievements: ['AI adopter', 'Demo ready', 'Zero overdue week'],
+  recommendations: [
+    'Подтвердить 3 pending suggestions до конца дня.',
+    'Разделить high-priority задачи на подзадачи перед review.',
+    'Запланировать meeting summary после каждого демо-созвона.',
+  ],
+  notes: ['PWA можно установить на рабочий стол.', 'В Telegram тема приложения берётся из клиента пользователя.'],
+};
