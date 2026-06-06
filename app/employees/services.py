@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.common.access_scope import AccessScopeService
 from app.common.security import hash_password
 from app.common.rbac import normalize_role, scopes_for_role
+from app.common.enums import Role
 from app.employees.repositories import EmployeeRepository
 from app.employees.schemas import EmployeeCreate, EmployeeUpdate
 from app.models.models import Employee, TelegramAccountLink, User, Department, Team, Notification
@@ -29,8 +30,13 @@ class EmployeeService:
         return [self._serialize_employee(employee) for employee in employees]
 
     def create(self, payload: EmployeeCreate, user):
+        self._ensure_manager_can_manage_payload(user, payload.role, payload.manager_id)
         self._validate_department_team(user.organization_id, payload.department_id, payload.team_id)
         self._validate_manager(user.organization_id, payload.manager_id)
+        manager_id = payload.manager_id
+        if normalize_role(user.role) == Role.MANAGER and manager_id is None:
+            current_employee = AccessScopeService(self.db).current_employee(user)
+            manager_id = current_employee.id if current_employee else None
         password = self._generate_password()
         email = str(payload.email).lower() if payload.email else None
         db_user = None
@@ -58,7 +64,7 @@ class EmployeeService:
             organization_id=user.organization_id,
             user_id=db_user.id if db_user else None,
             full_name=payload.full_name,
-            manager_id=payload.manager_id,
+            manager_id=manager_id,
             email=email,
             role=payload.role.value,
             permission_scopes=sorted(scope.value for scope in scopes_for_role(payload.role)),
@@ -85,6 +91,11 @@ class EmployeeService:
         if not employee:
             raise HTTPException(status_code=404, detail="Employee not found")
         values = payload.model_dump(exclude_unset=True)
+        if "telegram_id" in values and normalize_role(user.role) == Role.MANAGER:
+            raise HTTPException(status_code=403, detail="Managers set telegram_username only; telegram_id is captured from Telegram /start")
+        target_role = values.get("role", employee.role)
+        target_manager_id = values.get("manager_id", employee.manager_id)
+        self._ensure_manager_can_manage_payload(user, target_role, target_manager_id)
         self._validate_department_team(user.organization_id, values.get("department_id", employee.department_id), values.get("team_id", employee.team_id))
         if "manager_id" in values:
             self._validate_manager(user.organization_id, values.get("manager_id"))
@@ -188,6 +199,23 @@ class EmployeeService:
             "invitation_text": self._build_invitation_text(),
             "is_active": employee.is_active,
         }
+
+    def _ensure_manager_can_manage_payload(self, user, target_role, target_manager_id) -> None:
+        actor_role = normalize_role(user.role)
+        if actor_role in {Role.OWNER, Role.ADMIN}:
+            return
+        if actor_role != Role.MANAGER:
+            raise HTTPException(status_code=403, detail="Only managers, admins, and owners can manage employees")
+        normalized_target_role = normalize_role(target_role)
+        if normalized_target_role not in {Role.EMPLOYEE, Role.OBSERVER}:
+            raise HTTPException(status_code=403, detail="Managers can create or edit only EMPLOYEE/OBSERVER users; use admin for technical access changes")
+        scope = AccessScopeService(self.db)
+        current_employee = scope.current_employee(user)
+        if not current_employee:
+            raise HTTPException(status_code=403, detail="Manager employee profile is required")
+        manager_id = target_manager_id or current_employee.id
+        if not scope.can_access_employee(user, manager_id):
+            raise HTTPException(status_code=403, detail="Manager can assign employees only inside their reporting branch")
 
     def _build_invitation_text(self) -> str:
         bot_url = settings.telegram_bot_url or "ссылку на Telegram-бота уточните у администратора"

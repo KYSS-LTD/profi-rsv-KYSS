@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { magicLogin } from '../shared/api/authV2';
 import { Button } from '../shared/ui/Button';
 import { Card } from '../shared/ui/Card';
@@ -8,9 +8,10 @@ import { useEffect, useRef } from 'react';
 
 export function MagicLoginPage({ mode = 'login' }: { mode?: 'login' | 'activate' }) {
   const [params] = useSearchParams();
+  const routeParams = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const token = params.get('token') ?? '';
+  const token = routeParams.token ?? params.get('token') ?? '';
   const hasSubmitted = useRef(false);
   const mutation = useMutation({
     mutationFn: () => magicLogin(token),

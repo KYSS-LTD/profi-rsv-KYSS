@@ -28,7 +28,7 @@ export function createTelegramConnectCode(department_id?: string | null, team_id
   return apiClient<{ code: string; command: string; expires_at?: string | null; instruction: string[] }>('/v2/org/telegram/connect-code', { method: 'POST', body: JSON.stringify({ department_id, team_id }) });
 }
 
-export function updateOrganizationChat(id: string, payload: { ai_enabled: boolean; department_id?: string | null }) {
+export function updateOrganizationChat(id: string, payload: { ai_enabled: boolean; department_id?: string | null; team_id?: string | null }) {
   return apiClient<OrganizationChat>(`/v2/org/chats/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
 }
 
@@ -36,12 +36,16 @@ export function updateOrganizationChat(id: string, payload: { ai_enabled: boolea
 export type TaskSource = {
   id: string;
   organization_id: string;
-  source_type: 'TELEGRAM_CHAT' | 'TELEGRAM_TOPIC' | string;
-  telegram_chat_id: number;
+  source_type: 'TELEGRAM_CHAT' | 'TELEGRAM_TOPIC' | 'YOUGILE_BOARD' | 'YOUGILE_COLUMN' | string;
+  telegram_chat_id?: number | null;
   telegram_topic_id?: number | null;
+  yougile_board_id?: string | null;
+  yougile_column_id?: string | null;
   title: string;
   department_id?: string | null;
   team_id?: string | null;
+  board_mapping_id?: string | null;
+  responsibility_area_id?: string | null;
   is_active: boolean;
   ai_enabled: boolean;
   created_at: string;

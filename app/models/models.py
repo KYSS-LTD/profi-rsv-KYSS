@@ -35,6 +35,7 @@ class Message(Base):
     telegram_message_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, index=True)
     telegram_user_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE)
     chat_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, index=True)
+    message_thread_id: Mapped[int | None] = mapped_column(Integer, index=True)
     sender_name: Mapped[str | None]
     username: Mapped[str | None]
     text: Mapped[str]
@@ -203,6 +204,18 @@ class LoginToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+class ActivationToken(Base):
+    __tablename__ = "activation_tokens"
+    __table_args__ = (UniqueConstraint("token", name="uq_activation_token_token"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = uuid_fk("users.id")
+    token: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class Employee(Base, TimestampMixin):
     __tablename__ = "employees"
 
@@ -291,11 +304,15 @@ class TaskSource(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = uuid_pk()
     organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    telegram_chat_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, nullable=False, index=True)
+    telegram_chat_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE, nullable=True, index=True)
     telegram_topic_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    yougile_board_id: Mapped[str | None] = mapped_column(String(255), index=True)
+    yougile_column_id: Mapped[str | None] = mapped_column(String(255), index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
     team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
+    board_mapping_id: Mapped[uuid.UUID | None] = uuid_fk("board_mappings.id", nullable=True)
+    responsibility_area_id: Mapped[uuid.UUID | None] = uuid_fk("responsibility_areas.id", nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
@@ -315,6 +332,23 @@ class BoardIntegration(Base, TimestampMixin):
     team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
     webhook_secret_hash: Mapped[str | None] = mapped_column(String(128))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+
+class BoardMapping(Base, TimestampMixin):
+    __tablename__ = "board_mappings"
+    __table_args__ = (UniqueConstraint("organization_id", "provider", "external_board_id", name="uq_board_mapping_external_board"),)
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    organization_id: Mapped[uuid.UUID] = uuid_fk("organizations.id")
+    provider: Mapped[str] = mapped_column(String(32), default="yougile", nullable=False)
+    department_id: Mapped[uuid.UUID | None] = uuid_fk("departments.id", nullable=True)
+    team_id: Mapped[uuid.UUID | None] = uuid_fk("teams.id", nullable=True)
+    board_integration_id: Mapped[uuid.UUID | None] = uuid_fk("board_integrations.id", nullable=True)
+    external_project_id: Mapped[str | None] = mapped_column(String(255))
+    external_board_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    external_board_name: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
 
