@@ -14,7 +14,7 @@ from app.telegram.service import TelegramDeliveryError, TelegramService
 
 
 class TelegramCommandRouter:
-    COMMANDS = {"/start", "/help", "/login", "/tasks", "/today", "/stats", "/ask"}
+    COMMANDS = {"/start", "/help", "/login", "/tasks", "/mytasks", "/today", "/week", "/status", "/stats", "/settings", "/ask"}
 
     def __init__(self, db: Session, telegram: TelegramService | None = None):
         self.db = db
@@ -108,18 +108,25 @@ class TelegramCommandRouter:
         sender = msg.get("from") or {}
         employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
         if command == "/help":
-            text = "Команды Командуса:\n/tasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/stats — личная статистика\n/login — ссылка активации/входа\n/ask <вопрос> — спросить AI или Rule Engine. Например: /ask что просрочено"
+            text = "Команды Командуса:\n/mytasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/week — дедлайны на 7 дней\n/status — статус задач и подключения\n/settings — настройки Telegram\n/login — ссылка активации/входа\n/ask <вопрос> — спросить AI или Rule Engine. Например: /ask что просрочено"
         elif not employee:
             text = "Сначала подключите аккаунт командой /start."
         else:
             tasks = self.db.query(KomandusTask).filter(KomandusTask.employee_id == employee.id).all()
-            if command == "/stats":
+            if command in {"/stats", "/status"}:
                 done = sum(1 for task in tasks if task.status == TaskStatus.DONE.value)
                 overdue = sum(1 for task in tasks if task.status == TaskStatus.OVERDUE.value)
-                text = f"Статистика: всего {len(tasks)}, завершено {done}, просрочено {overdue}."
+                active = sum(1 for task in tasks if task.status not in {TaskStatus.DONE.value, TaskStatus.REJECTED.value})
+                text = f"Статус: всего {len(tasks)}, активных {active}, завершено {done}, просрочено {overdue}. Telegram: {employee.telegram_status}."
             elif command == "/today":
                 today = [task for task in tasks if task.due_at and task.due_at.date() == datetime.utcnow().date()]
                 text = "Сегодня:\n" + "\n".join(f"• {task.title} — {task.status}" for task in today[:10]) if today else "На сегодня задач нет."
+            elif command == "/week":
+                today = datetime.utcnow().date()
+                week = [task for task in tasks if task.due_at and 0 <= (task.due_at.date() - today).days <= 7]
+                text = "На 7 дней:\n" + "\n".join(f"• {task.due_at.date().isoformat()} · {task.title} — {task.status}" for task in week[:10]) if week else "На ближайшие 7 дней дедлайнов нет."
+            elif command == "/settings":
+                text = "Настройки Telegram: используйте /login для новой ссылки входа, /help для списка команд. Изменение профиля выполняется в Командусе."
             else:
                 active = [task for task in tasks if task.status not in {TaskStatus.DONE.value, TaskStatus.REJECTED.value}]
                 text = "Ваши задачи:\n" + "\n".join(f"• {task.title} — {task.status}" for task in active[:10]) if active else "Активных задач нет."
@@ -127,7 +134,7 @@ class TelegramCommandRouter:
         return {"status": "command", "command": command}
 
     def main_menu_keyboard(self):
-        return {"inline_keyboard": [[{"text": "📋 Мои задачи", "callback_data": "menu:tasks"}, {"text": "⏰ Сегодня", "callback_data": "menu:today"}], [{"text": "📈 Моя статистика", "callback_data": "menu:stats"}, {"text": "❓ Помощь", "callback_data": "menu:help"}], [{"text": "🔗 Войти в Командус", "callback_data": "menu:login"}]]}
+        return {"inline_keyboard": [[{"text": "📋 Мои задачи", "callback_data": "menu:tasks"}, {"text": "⏰ Сегодня", "callback_data": "menu:today"}], [{"text": "📆 Неделя", "callback_data": "menu:week"}, {"text": "📈 Статус", "callback_data": "menu:status"}], [{"text": "⚙️ Настройки", "callback_data": "menu:settings"}, {"text": "❓ Помощь", "callback_data": "menu:help"}], [{"text": "🔗 Войти в Командус", "callback_data": "menu:login"}]]}
 
     async def _send_message(self, chat_id: int | None, text: str, reply_markup: dict | None = None):
         if chat_id is None:

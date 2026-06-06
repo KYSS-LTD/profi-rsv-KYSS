@@ -22,6 +22,7 @@ export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   { path: '/auth/magic-login', element: <MagicLoginPage /> },
   { path: '/activate', element: <MagicLoginPage mode="activate" /> },
+  { path: '/activate/:token', element: <MagicLoginPage mode="activate" /> },
   {
     element: <ProtectedRoute />,
     children: [

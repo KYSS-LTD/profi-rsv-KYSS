@@ -73,14 +73,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("UPDATE users SET role='ORG_OWNER' WHERE role='OWNER'")
-    op.execute("UPDATE users SET role='PRODUCT_MANAGER' WHERE role='ADMIN'")
-    op.execute("UPDATE users SET role='DEPARTMENT_MANAGER' WHERE role='MANAGER'")
-    op.execute("UPDATE users SET role='VIEWER' WHERE role='OBSERVER'")
-    op.execute("UPDATE employees SET role='ORG_OWNER' WHERE role='OWNER'")
-    op.execute("UPDATE employees SET role='PRODUCT_MANAGER' WHERE role='ADMIN'")
-    op.execute("UPDATE employees SET role='DEPARTMENT_MANAGER' WHERE role='MANAGER'")
-    op.execute("UPDATE employees SET role='VIEWER' WHERE role='OBSERVER'")
     for name in ["fk_tasks_current_owner_user_id_users", "fk_tasks_assigned_responsibility_area_id_responsibility_areas", "fk_tasks_assigned_org_unit_id_org_units", "fk_tasks_assigned_position_id_positions"]:
         op.drop_constraint(name, "komandus_tasks", type_="foreignkey")
     for column in ["current_owner_user_id", "assigned_responsibility_area_id", "assigned_organizational_unit_id", "assigned_position_id"]:

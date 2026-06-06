@@ -59,7 +59,7 @@ export function AnalyticsPage() {
               <div className="space-y-3">
                 {data.top_employees.map((item, index) => (
                   <div key={item.employee_id} className="rounded-2xl bg-stone-50 p-3">
-                    <div className="mb-2 flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-stone-900">#{index + 1} · {item.employee_id}</span><span className="text-stone-500">{item.tasks}</span></div>
+                    <div className="mb-2 flex items-center justify-between gap-3 text-sm"><span className="truncate font-medium text-stone-900">#{index + 1} · {item.employee_name}</span><span className="text-stone-500">{item.tasks}</span></div>
                     <div className="h-2 rounded-full bg-white"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${(item.tasks / Math.max(1, data.top_employees[0]?.tasks ?? 1)) * 100}%` }} /></div>
                   </div>
                 ))}

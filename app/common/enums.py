@@ -47,6 +47,8 @@ class OrganizationMode(StrEnum):
 class TaskSourceType(StrEnum):
     TELEGRAM_CHAT = "TELEGRAM_CHAT"
     TELEGRAM_TOPIC = "TELEGRAM_TOPIC"
+    YOUGILE_BOARD = "YOUGILE_BOARD"
+    YOUGILE_COLUMN = "YOUGILE_COLUMN"
 
 
 class TaskStatus(StrEnum):
