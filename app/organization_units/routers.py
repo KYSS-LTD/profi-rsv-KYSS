@@ -6,10 +6,43 @@ from app.auth.dependencies import get_current_user
 from app.common.enums import Role
 from app.common.rbac import RoleChecker
 from app.dependencies import get_db
-from app.organization_units.schemas import ConnectCodeCreate, ConnectCodeResponse, DepartmentCreate, DepartmentResponse, DepartmentUpdate, OrganizationChatResponse, TeamCreate, TeamResponse
+from app.organization_units.schemas import (
+    ConnectCodeCreate,
+    ConnectCodeResponse,
+    DepartmentCreate,
+    DepartmentResponse,
+    DepartmentUpdate,
+    HierarchyWizardResponse,
+    HierarchyWizardUpdate,
+    OrganizationChatResponse,
+    OrganizationModeResponse,
+    TaskSourceResponse,
+    TeamCreate,
+    TeamResponse,
+)
 from app.organization_units.services import OrganizationUnitService
 
 router = APIRouter(prefix="/api/v2/org", tags=["Organization"])
+
+
+@router.get("/mode", response_model=OrganizationModeResponse)
+def organization_mode(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    return OrganizationUnitService(db).get_mode(current_user)
+
+
+@router.post("/hierarchy-wizard/start", response_model=HierarchyWizardResponse)
+def start_hierarchy_wizard(current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN)), db: Session = Depends(get_db)):
+    return OrganizationUnitService(db).start_hierarchy_wizard(current_user)
+
+
+@router.patch("/hierarchy-wizard", response_model=HierarchyWizardResponse)
+def update_hierarchy_wizard(payload: HierarchyWizardUpdate, current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN)), db: Session = Depends(get_db)):
+    return OrganizationUnitService(db).update_hierarchy_wizard(payload, current_user)
+
+
+@router.post("/hierarchy-wizard/confirm", response_model=HierarchyWizardResponse)
+def confirm_hierarchy_mode(current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN)), db: Session = Depends(get_db)):
+    return OrganizationUnitService(db).confirm_hierarchy_mode(current_user)
 
 
 @router.get("/departments", response_model=list[DepartmentResponse])
@@ -40,6 +73,11 @@ def create_team(payload: TeamCreate, current_user=Depends(RoleChecker(Role.OWNER
 @router.get("/chats", response_model=list[OrganizationChatResponse])
 def list_chats(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     return OrganizationUnitService(db).list_chats(current_user)
+
+
+@router.get("/task-sources", response_model=list[TaskSourceResponse])
+def list_task_sources(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    return OrganizationUnitService(db).list_task_sources(current_user)
 
 
 @router.post("/telegram/connect-code", response_model=ConnectCodeResponse)

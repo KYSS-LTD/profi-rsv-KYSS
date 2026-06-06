@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.audit.services import AuditService
-from app.boards.schemas import ColumnMappingCreate, EmployeeBoardMappingCreate
+from app.boards.schemas import ColumnMappingCreate, EmployeeBoardMappingCreate, VerifyYouGileRequest
 from app.common.security import encrypt_secret
 from app.models.models import BoardIntegration, ColumnMapping, EmployeeBoardMapping, ProcessedWebhookEvent
 from app.yougile.provider import YouGileProvider
@@ -17,9 +17,10 @@ class BoardService:
         self.db = db
         self.audit = AuditService(db)
 
-    async def verify_yougile(self, api_token: str, user):
-        metadata = await YouGileProvider(api_token).sync()
-        integration = BoardIntegration(organization_id=user.organization_id, provider="yougile", name="YouGile", encrypted_api_token=encrypt_secret(api_token), metadata_json=metadata)
+    async def verify_yougile(self, api_token: str | VerifyYouGileRequest, user):
+        payload = api_token if isinstance(api_token, VerifyYouGileRequest) else VerifyYouGileRequest(api_token=api_token)
+        metadata = await YouGileProvider(payload.api_token).sync()
+        integration = BoardIntegration(organization_id=user.organization_id, provider="yougile", name="YouGile", encrypted_api_token=encrypt_secret(payload.api_token), department_id=payload.department_id, team_id=payload.team_id, metadata_json=metadata)
         self.db.add(integration)
         self.db.commit(); self.db.refresh(integration)
         self.audit.log(action="Connect Board", organization_id=user.organization_id, user_id=user.id, entity_type="BoardIntegration", entity_id=integration.id)

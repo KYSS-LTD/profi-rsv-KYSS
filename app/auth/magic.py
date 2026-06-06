@@ -29,10 +29,13 @@ class MagicLoginService:
         return row
 
     def build_magic_login_url(self, token: str) -> str | None:
+        return self.build_activation_url(token)
+
+    def build_activation_url(self, token: str) -> str | None:
         public_url = settings.public_app_url
         if not public_url:
             return None
-        return f"{public_url}/auth/magic-login?token={token}"
+        return f"{public_url}/activate?token={token}"
 
     def consume_token(self, token: str) -> User | None:
         row = self.db.query(LoginToken).filter(LoginToken.token == token).first()

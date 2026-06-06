@@ -12,17 +12,17 @@ router = APIRouter(prefix="/api/v2/boards", tags=["Boards"])
 
 
 @router.post("/yougile/verify", response_model=BoardIntegrationResponse, summary="Verify YouGile token", description="Validate YouGile token, encrypt it with Fernet, and import projects, boards, columns, and users metadata.")
-async def verify_yougile(payload: VerifyYouGileRequest, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
-    return await BoardService(db).verify_yougile(payload.api_token, current_user)
+async def verify_yougile(payload: VerifyYouGileRequest, current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN, Role.MANAGER)), db: Session = Depends(get_db)):
+    return await BoardService(db).verify_yougile(payload, current_user)
 
 
 @router.post("/{integration_id}/columns", summary="Map board column", description="Map Komandus task lifecycle status to a YouGile column.")
-def create_column_mapping(integration_id: UUID, payload: ColumnMappingCreate, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
+def create_column_mapping(integration_id: UUID, payload: ColumnMappingCreate, current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN, Role.MANAGER)), db: Session = Depends(get_db)):
     return BoardService(db).add_column_mapping(integration_id, payload, current_user)
 
 
 @router.post("/{integration_id}/employees", summary="Map board user", description="Map an employee to a YouGile user by email or manual external user ID.")
-def create_employee_mapping(integration_id: UUID, payload: EmployeeBoardMappingCreate, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
+def create_employee_mapping(integration_id: UUID, payload: EmployeeBoardMappingCreate, current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN, Role.MANAGER)), db: Session = Depends(get_db)):
     return BoardService(db).add_employee_mapping(integration_id, payload, current_user)
 
 

@@ -4,6 +4,8 @@ from uuid import UUID
 
 class VerifyYouGileRequest(BaseModel):
     api_token: str = Field(min_length=8, examples=["yg_xxx"])
+    department_id: UUID | None = None
+    team_id: UUID | None = None
 
 
 class BoardIntegrationResponse(BaseModel):
@@ -13,6 +15,8 @@ class BoardIntegrationResponse(BaseModel):
     name: str
     external_project_id: str | None
     external_board_id: str | None
+    department_id: UUID | None = None
+    team_id: UUID | None = None
     is_active: bool
     metadata_json: dict | None
 

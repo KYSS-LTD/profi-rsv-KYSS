@@ -33,9 +33,13 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.CAN_MANAGE_PERMISSIONS,
     },
     Role.MANAGER: {
+        Permission.CAN_CREATE_EMPLOYEE,
         Permission.CAN_EDIT_EMPLOYEE,
+        Permission.CAN_DISABLE_EMPLOYEE,
         Permission.CAN_ASSIGN_TASKS,
         Permission.CAN_VIEW_ANALYTICS,
+        Permission.CAN_MANAGE_BOARDS,
+        Permission.CAN_MANAGE_INTEGRATIONS,
         Permission.CAN_MANAGE_TEAMS,
     },
     Role.EMPLOYEE: set(),

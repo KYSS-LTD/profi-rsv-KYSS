@@ -29,7 +29,7 @@ async def telegram_webhook(payload: TelegramWebhook, db: Session = Depends(get_d
 
 
 @router.post("/webhook/setup")
-async def setup_telegram_webhook(url: str = Body(...), secret_token: str | None = Body(default=None), current_user=Depends(RoleChecker(Role.MANAGER))):
+async def setup_telegram_webhook(url: str = Body(...), secret_token: str | None = Body(default=None), current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN, Role.MANAGER))):
     result = await TelegramService().set_webhook(url, secret_token=secret_token)
     return {"status": "configured", "telegram": result}
 

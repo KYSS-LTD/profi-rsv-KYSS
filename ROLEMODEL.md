@@ -476,3 +476,72 @@ Delegation — это временная власть.
 Scopes — это точная область permissions.
 
 Эти понятия нельзя смешивать.
+
+## Organization modes
+
+Командус поддерживает два режима организации.
+
+### SIMPLE mode
+
+`SIMPLE` — режим для компаний примерно до 30 сотрудников.
+
+В этом режиме интерфейс и правила намеренно проще:
+
+- отделы и команды не обязательны;
+- делегации и сложная оргструктура скрываются из основного сценария;
+- `MANAGER` может видеть всю компанию и выполнять базовое управление сотрудниками;
+- Telegram и YouGile можно подключить без полной организационной декомпозиции.
+
+SIMPLE mode нужен, чтобы малые компании не сталкивались с enterprise-сложностью в первый день.
+
+### HIERARCHY mode
+
+`HIERARCHY` — режим для компаний с несколькими уровнями управления.
+
+В этом режиме включаются:
+
+- Departments;
+- Teams;
+- manager tree;
+- Responsibility Areas;
+- Delegations;
+- source mapping для Telegram chats/topics;
+- строгая manager visibility по `manager_id`.
+
+Переход из SIMPLE в HIERARCHY должен выполняться через мастер настройки структуры, а не через скрытый флаг в базе.
+
+## Telegram identity и activation
+
+Менеджер никогда не вводит `telegram_id`, потому что сотрудник его не знает, а Telegram Bot API не позволяет получить user id по username.
+
+Правильный поток:
+
+1. Менеджер создает сотрудника и указывает `telegram_username`, например `@ivan_petrov`.
+2. Сотрудник пишет боту `/start`.
+3. Бот получает `telegram_id`, `username`, `first_name`, `last_name`.
+4. Командус сопоставляет `username` с сохраненным `telegram_username`.
+5. После совпадения сохраняется `telegram_id`, а статус становится `CONNECTED`.
+6. Сотруднику отправляется activation link.
+
+Постоянные пароли не отправляются. Сотрудник активирует аккаунт по одноразовому token и сам задает пароль.
+
+## Telegram TaskSource
+
+Рабочие чаты и supergroup topics моделируются через `TaskSource`.
+
+Типы источников:
+
+- `TELEGRAM_CHAT` — весь обычный Telegram chat;
+- `TELEGRAM_TOPIC` — конкретный topic внутри supergroup.
+
+Каждый источник можно привязать к `Department` или `Team`.
+
+Пример:
+
+```text
+Backend topic → Backend team
+DevOps topic → DevOps team
+Sales chat → Sales department
+```
+
+AI-анализ задач обязан учитывать source context: отдел, команду, сотрудников этой команды и зоны ответственности.

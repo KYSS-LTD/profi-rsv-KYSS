@@ -95,7 +95,7 @@ class TelegramCommandRouter:
             await self._send_message(chat_id, "Сначала подключите аккаунт командой /start.")
             return {"status": "not_linked"}
         if not question:
-            await self._send_message(chat_id, "Напишите вопрос после /ask или используйте кнопку 🤖 Ask AI.")
+            await self._send_message(chat_id, "Напишите вопрос после /ask. Например: /ask какие у меня дедлайны")
             return {"status": "ask_waiting"}
         from app.models.models import User
         user = self.db.query(User).filter(User.id == employee.user_id).first()
@@ -108,7 +108,7 @@ class TelegramCommandRouter:
         sender = msg.get("from") or {}
         employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
         if command == "/help":
-            text = "/tasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/stats — личная статистика\n/login — новая ссылка для входа\n/ask — AI-помощник"
+            text = "Команды Командуса:\n/tasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/stats — личная статистика\n/login — ссылка активации/входа\n/ask <вопрос> — спросить AI или Rule Engine. Например: /ask что просрочено"
         elif not employee:
             text = "Сначала подключите аккаунт командой /start."
         else:
@@ -127,7 +127,7 @@ class TelegramCommandRouter:
         return {"status": "command", "command": command}
 
     def main_menu_keyboard(self):
-        return {"inline_keyboard": [[{"text": "📋 Мои задачи", "callback_data": "menu:tasks"}, {"text": "📅 Сегодня", "callback_data": "menu:today"}], [{"text": "🤖 Ask AI", "callback_data": "menu:ask"}, {"text": "📈 Статистика", "callback_data": "menu:stats"}], [{"text": "🔔 Напоминания", "callback_data": "menu:reminders"}, {"text": "⚙️ Настройки", "callback_data": "menu:settings"}]]}
+        return {"inline_keyboard": [[{"text": "📋 Мои задачи", "callback_data": "menu:tasks"}, {"text": "⏰ Сегодня", "callback_data": "menu:today"}], [{"text": "📈 Моя статистика", "callback_data": "menu:stats"}, {"text": "❓ Помощь", "callback_data": "menu:help"}], [{"text": "🔗 Войти в Командус", "callback_data": "menu:login"}]]}
 
     async def _send_message(self, chat_id: int | None, text: str, reply_markup: dict | None = None):
         if chat_id is None:

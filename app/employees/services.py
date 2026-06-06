@@ -13,7 +13,7 @@ from app.common.security import hash_password
 from app.common.rbac import normalize_role, scopes_for_role
 from app.employees.repositories import EmployeeRepository
 from app.employees.schemas import EmployeeCreate, EmployeeUpdate
-from app.models.models import Employee, TelegramAccountLink, User, Department, Team
+from app.models.models import Employee, TelegramAccountLink, User, Department, Team, Notification
 from app.telegram.service import TelegramDeliveryError, TelegramService
 
 
@@ -74,7 +74,7 @@ class EmployeeService:
         if known_link:
             known_link.employee_id = employee.id
             self.db.commit()
-            self._send_magic_login(employee)
+            self._send_activation_link(employee)
         self.audit.log(action="Create Employee", organization_id=user.organization_id, user_id=user.id, entity_type="Employee", entity_id=employee.id, metadata={"role": normalize_role(employee.role).value, "department_id": str(employee.department_id) if employee.department_id else None})
         return self._serialize_employee(employee)
 
@@ -146,17 +146,20 @@ class EmployeeService:
         return self._serialize_employee(employee)
 
     def _send_login_credentials(self, employee: Employee) -> None:
-        self._send_magic_login(employee)
+        self._send_activation_link(employee)
 
-    def _send_magic_login(self, employee: Employee) -> None:
+    def _send_activation_link(self, employee: Employee) -> None:
         if not employee.user_id:
             return
         token = MagicLoginService(self.db).create_token(employee.user_id)
-        magic_url = MagicLoginService(self.db).build_magic_login_url(token.token)
+        activation_url = MagicLoginService(self.db).build_activation_url(token.token)
+        if employee.email:
+            self.db.add(Notification(organization_id=employee.organization_id, employee_id=employee.id, user_id=employee.user_id, type="activation_email_queued", title="Activation email queued", body=activation_url))
+            self.db.commit()
         try:
-            asyncio.run(self.telegram.send_magic_login(employee, magic_url))
+            asyncio.run(self.telegram.send_activation_link(employee, activation_url))
         except TelegramDeliveryError as exc:
-            self.audit.log(action="Telegram Delivery Failed", organization_id=employee.organization_id, entity_type="Employee", entity_id=employee.id, metadata={"error": str(exc), "flow": "magic_login"})
+            self.audit.log(action="Telegram Delivery Failed", organization_id=employee.organization_id, entity_type="Employee", entity_id=employee.id, metadata={"error": str(exc), "flow": "activation"})
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     def _serialize_employee(self, employee: Employee) -> dict:
@@ -188,7 +191,7 @@ class EmployeeService:
 
     def _build_invitation_text(self) -> str:
         bot_url = settings.telegram_bot_url or "ссылку на Telegram-бота уточните у администратора"
-        return f"Откройте бота Командус: {bot_url}\n1. Откройте бота.\n2. Выполните /start.\n3. Получите ссылку для входа."
+        return f"Откройте бота Командус: {bot_url}\n1. Откройте бота.\n2. Выполните /start.\n3. Командус привяжет Telegram по @username и отправит ссылку активации."
 
     def _validate_manager(self, organization_id, manager_id):
         if manager_id and not self.db.query(Employee).filter(Employee.id == manager_id, Employee.organization_id == organization_id, Employee.is_active.is_(True)).first():
