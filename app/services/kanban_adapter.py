@@ -32,7 +32,7 @@ class KanbanAdapter:
             source=source,
             confidence=confidence,
             created_by_ai=candidate_id is not None,
-            status=status,
+            status=("OPEN" if status == "todo" else status.upper()),
             priority="medium",
         )
         self.db.add(task)

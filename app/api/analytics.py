@@ -12,11 +12,11 @@ router = APIRouter(prefix="/analytics", tags=["Analytics"])
 async def get_team_analytics(db: Session = Depends(get_db)):
     total_tasks = db.query(Task).count()
     ai_created_tasks = db.query(Task).filter(Task.created_by_ai.is_(True)).count()
-    waiting_confirmation = db.query(TaskCandidate).filter(TaskCandidate.status == "pending").count()
-    rejected_suggestions = db.query(TaskCandidate).filter(TaskCandidate.status == "rejected").count()
-    confirmed_candidates = db.query(TaskCandidate).filter(TaskCandidate.status.in_(("approved", "confirmed"))).count()
+    waiting_confirmation = db.query(TaskCandidate).filter(TaskCandidate.status.in_(("PENDING", "pending"))).count()
+    rejected_suggestions = db.query(TaskCandidate).filter(TaskCandidate.status.in_(("REJECTED", "rejected"))).count()
+    confirmed_candidates = db.query(TaskCandidate).filter(TaskCandidate.status.in_(("ACCEPTED", "approved", "confirmed"))).count()
     voice_messages_processed = db.query(Message).filter(Message.source == "telegram_voice").count()
-    done_tasks = db.query(Task).filter(Task.status == "done").count()
+    done_tasks = db.query(Task).filter(Task.status.in_(("DONE", "done"))).count()
     average_confidence = db.query(func.avg(TaskCandidate.confidence)).scalar() or 0
 
     return {
@@ -46,7 +46,7 @@ async def get_team_analytics(db: Session = Depends(get_db)):
 async def get_leaderboard(db: Session = Depends(get_db)):
     rows = (
         db.query(Task.assignee, Task.assignee_id, func.count(Task.id))
-        .filter(Task.status == "done")
+        .filter(Task.status.in_(("DONE", "done")))
         .group_by(Task.assignee, Task.assignee_id)
         .all()
     )

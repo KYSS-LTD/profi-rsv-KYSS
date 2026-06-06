@@ -4,6 +4,8 @@ from typing import Any, Dict, Optional
 class TaskCreate(BaseModel):
     title: str
     description: str | None = None
+    assignee_id: int | None = None
+    due_date: str | None = None
 
 class TaskResponse(BaseModel):
     id: int

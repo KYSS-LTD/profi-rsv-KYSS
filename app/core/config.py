@@ -46,6 +46,17 @@ class Settings:
 
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret-change-me")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = _get_int("ACCESS_TOKEN_EXPIRE_MINUTES", 60)
+    REFRESH_TOKEN_EXPIRE_DAYS: int = _get_int("REFRESH_TOKEN_EXPIRE_DAYS", 30)
+
+    YOUGILE_API_TOKEN: str = os.getenv("YOUGILE_API_TOKEN", "")
+    YOUGILE_BASE_URL: str = os.getenv("YOUGILE_BASE_URL", "https://yougile.com/api-v2")
+    YOUGILE_PROJECT_ID: str = os.getenv("YOUGILE_PROJECT_ID", "")
+    YOUGILE_DEFAULT_COLUMN_ID: str = os.getenv("YOUGILE_DEFAULT_COLUMN_ID", "")
+    YOUGILE_IN_PROGRESS_COLUMN_ID: str = os.getenv("YOUGILE_IN_PROGRESS_COLUMN_ID", "")
+    YOUGILE_DONE_COLUMN_ID: str = os.getenv("YOUGILE_DONE_COLUMN_ID", "")
+    YOUGILE_CANCELLED_COLUMN_ID: str = os.getenv("YOUGILE_CANCELLED_COLUMN_ID", "")
 
     LLM_PROCESSING_ENABLED: bool = _get_bool("LLM_PROCESSING_ENABLED", False)
     LLM_PROCESSING_PATH: str = os.getenv("LLM_PROCESSING_PATH", "LLMProcessing")
