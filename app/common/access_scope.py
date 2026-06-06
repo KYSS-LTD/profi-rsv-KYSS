@@ -18,11 +18,10 @@ class ScopeIds:
 
 
 class AccessScopeService:
-    """Computes tenant and hierarchy-aware data visibility for RBAC.
+    """Backend-enforced human visibility.
 
-    Managers are scoped through the employee.manager_id tree first and then
-    constrained to their department/team where applicable, preventing access to
-    parallel departments or teams.
+    Technical roles grant administration rights, while the reporting tree in
+    employees.manager_id is the single source of truth for manager visibility.
     """
 
     def __init__(self, db: Session):
@@ -34,62 +33,30 @@ class AccessScopeService:
     def get_visible_employees(self, user: User) -> Query:
         query = self.db.query(Employee)
         role = normalize_role(user.role)
-        if role == Role.SUPER_ADMIN:
-            return query
+        if role in {Role.OWNER, Role.ADMIN}:
+            return query.filter(Employee.organization_id == user.organization_id)
         query = query.filter(Employee.organization_id == user.organization_id)
         ids = self._visible_employee_ids(user)
-        if ids is not None:
-            query = query.filter(Employee.id.in_(ids) if ids else False)
-        return query
+        return query.filter(Employee.id.in_(ids) if ids else False)
 
     def get_visible_departments(self, user: User) -> Query:
-        query = self.db.query(Department)
-        role = normalize_role(user.role)
-        if role == Role.SUPER_ADMIN:
+        query = self.db.query(Department).filter(Department.organization_id == user.organization_id)
+        if normalize_role(user.role) in {Role.OWNER, Role.ADMIN, Role.OBSERVER}:
             return query
-        query = query.filter(Department.organization_id == user.organization_id)
-        if role == Role.DEPARTMENT_MANAGER and user.department_id:
-            query = query.filter(Department.id == user.department_id)
-        elif role == Role.TEAM_LEAD:
-            employee = self.current_employee(user)
-            dept_id = user.department_id or (employee.department_id if employee else None)
-            query = query.filter(Department.id == dept_id) if dept_id else query.filter(False)
-        elif role in {Role.EMPLOYEE, Role.VIEWER}:
-            employee = self.current_employee(user)
-            dept_id = user.department_id or (employee.department_id if employee else None)
-            query = query.filter(Department.id == dept_id) if dept_id else query.filter(False)
-        return query
+        scope = self.visible_scope_ids(user)
+        return query.filter(Department.id.in_(scope.department_ids) if scope.department_ids else False)
 
     def get_visible_teams(self, user: User) -> Query:
-        query = self.db.query(Team)
-        role = normalize_role(user.role)
-        if role == Role.SUPER_ADMIN:
+        query = self.db.query(Team).filter(Team.organization_id == user.organization_id)
+        if normalize_role(user.role) in {Role.OWNER, Role.ADMIN, Role.OBSERVER}:
             return query
-        query = query.filter(Team.organization_id == user.organization_id)
-        if role == Role.DEPARTMENT_MANAGER and user.department_id:
-            query = query.filter(Team.department_id == user.department_id)
-        elif role == Role.TEAM_LEAD:
-            employee = self.current_employee(user)
-            team_id = user.team_id or (employee.team_id if employee else None)
-            query = query.filter(Team.id == team_id) if team_id else query.filter(False)
-        elif role in {Role.EMPLOYEE, Role.VIEWER}:
-            employee = self.current_employee(user)
-            team_id = user.team_id or (employee.team_id if employee else None)
-            query = query.filter(Team.id == team_id) if team_id else query.filter(False)
-        return query
+        scope = self.visible_scope_ids(user)
+        return query.filter(Team.id.in_(scope.team_ids) if scope.team_ids else False)
 
     def get_visible_tasks(self, user: User) -> Query:
-        query = self.db.query(KomandusTask)
+        query = self.db.query(KomandusTask).filter(KomandusTask.organization_id == user.organization_id)
         role = normalize_role(user.role)
-        if role == Role.SUPER_ADMIN:
-            return query
-        query = query.filter(KomandusTask.organization_id == user.organization_id)
-        if role in {Role.ORG_OWNER, Role.PRODUCT_MANAGER}:
-            if role == Role.PRODUCT_MANAGER:
-                if user.department_id:
-                    query = query.filter(KomandusTask.department_id == user.department_id)
-                if user.team_id:
-                    query = query.filter(KomandusTask.team_id == user.team_id)
+        if role in {Role.OWNER, Role.ADMIN, Role.OBSERVER}:
             return query
         ids = self._visible_employee_ids(user)
         return query.filter(KomandusTask.employee_id.in_(ids) if ids else False)
@@ -103,19 +70,20 @@ class AccessScopeService:
         )
 
     def can_access_employee(self, user: User, employee_id: UUID) -> bool:
-        role = normalize_role(user.role)
-        if role == Role.SUPER_ADMIN:
+        if normalize_role(user.role) in {Role.OWNER, Role.ADMIN}:
             return True
-        ids = self._visible_employee_ids(user)
-        return ids is None or employee_id in ids
+        return employee_id in self._visible_employee_ids(user)
 
-    def _visible_employee_ids(self, user: User) -> set[UUID] | None:
+    def _visible_employee_ids(self, user: User) -> set[UUID]:
         role = normalize_role(user.role)
-        if role in {Role.SUPER_ADMIN, Role.ORG_OWNER, Role.PRODUCT_MANAGER}:
-            return None
         current = self.current_employee(user)
         if not current:
             return set()
+        if role == Role.EMPLOYEE:
+            return {current.id}
+        if role == Role.OBSERVER:
+            return {employee.id for employee in self.db.query(Employee).filter(Employee.organization_id == user.organization_id).all()}
+
         all_employees = self.db.query(Employee).filter(Employee.organization_id == current.organization_id).all()
         children: dict[UUID | None, list[Employee]] = {}
         for employee in all_employees:
@@ -128,12 +96,4 @@ class AccessScopeService:
                 continue
             visible.add(employee.id)
             stack.extend(children.get(employee.id, []))
-        if role == Role.DEPARTMENT_MANAGER:
-            dept_id = user.department_id or current.department_id
-            visible = {employee.id for employee in all_employees if employee.id in visible and employee.department_id == dept_id}
-        elif role == Role.TEAM_LEAD:
-            team_id = user.team_id or current.team_id
-            visible = {employee.id for employee in all_employees if employee.id in visible and employee.team_id == team_id}
-        elif role in {Role.EMPLOYEE, Role.VIEWER}:
-            visible = {current.id}
         return visible

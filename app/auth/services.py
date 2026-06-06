@@ -43,12 +43,12 @@ class AuthService:
         return {"status": "password_changed"}
 
     def impersonate(self, actor, target_user_id: str, response: Response):
-        if normalize_role(actor.role) not in {Role.ORG_OWNER, Role.SUPER_ADMIN}:
+        if normalize_role(actor.role) != Role.OWNER:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only organization owners can impersonate employees")
         target = self.users.get_by_id(str(target_user_id))
         if not target:
             raise HTTPException(status_code=404, detail="User not found")
-        if actor.role != Role.SUPER_ADMIN.value and target.organization_id != actor.organization_id:
+        if normalize_role(actor.role) != Role.OWNER and target.organization_id != actor.organization_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot impersonate user outside organization")
         target.impersonated_by_user_id = actor.id
         self.users.save(target)

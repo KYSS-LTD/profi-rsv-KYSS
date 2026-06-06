@@ -5,7 +5,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.schemas import ChangePasswordRequest, ImpersonateRequest, LoginRequest, MagicLoginRequest, MeResponse, TokenResponse
 from app.auth.services import AuthService, REFRESH_COOKIE_NAME
 from app.dependencies import get_db
-from app.common.rbac import permission_values_for_role
+from app.common.rbac import normalize_role, permission_values_for_role
 
 router = APIRouter(prefix="/api/v2/auth", tags=["Auth"])
 
@@ -25,7 +25,7 @@ def change_password(payload: ChangePasswordRequest, current_user=Depends(get_cur
     return AuthService(db).change_password(current_user, payload.new_password)
 
 
-@router.post("/impersonate", response_model=TokenResponse, summary="Impersonate employee", description="ORG_OWNER opens the product as another employee in the same organization; all actions are audited.")
+@router.post("/impersonate", response_model=TokenResponse, summary="Impersonate employee", description="Owner opens the product as another employee in the same organization; all actions are audited.")
 def impersonate(payload: ImpersonateRequest, response: Response, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     return AuthService(db).impersonate(current_user, str(payload.user_id), response)
 
@@ -47,7 +47,7 @@ def me(current_user=Depends(get_current_user)):
         "organization_id": current_user.organization_id,
         "email": current_user.email,
         "full_name": current_user.full_name,
-        "role": current_user.role,
+        "role": normalize_role(current_user.role).value,
         "department_id": current_user.department_id,
         "team_id": current_user.team_id,
         "must_change_password": current_user.must_change_password,
