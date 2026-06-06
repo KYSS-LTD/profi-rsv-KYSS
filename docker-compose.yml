@@ -11,8 +11,15 @@ services:
       FERNET_KEY: ${FERNET_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     ports:
       - "8000:8000"
+    networks:
+      default:
+        aliases:
+          - api
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,6 +39,9 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       FERNET_KEY: ${FERNET_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,6 +61,9 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       FERNET_KEY: ${FERNET_KEY:-}
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy

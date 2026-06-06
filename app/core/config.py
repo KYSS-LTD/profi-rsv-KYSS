@@ -47,7 +47,7 @@ class Settings:
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     JWT_SECRET: str = os.getenv("JWT_SECRET", "change-me-in-production")
-    ACCESS_TOKEN_EXPIRE_SECONDS: int = _get_int("ACCESS_TOKEN_EXPIRE_SECONDS", 900)
+    ACCESS_TOKEN_EXPIRE_SECONDS: int = _get_int("ACCESS_TOKEN_EXPIRE_SECONDS", 90000)
     REFRESH_TOKEN_EXPIRE_SECONDS: int = _get_int("REFRESH_TOKEN_EXPIRE_SECONDS", 604800)
     YOUGILE_API_BASE_URL: str = os.getenv("YOUGILE_API_BASE_URL", "https://ru.yougile.com/api-v2")
     APP_PUBLIC_URL: str | None = os.getenv("APP_PUBLIC_URL")

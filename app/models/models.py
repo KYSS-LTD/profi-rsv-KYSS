@@ -35,7 +35,7 @@ class Message(Base):
     telegram_message_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, index=True)
     telegram_user_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE)
     chat_id: Mapped[int] = mapped_column(TELEGRAM_ID_TYPE, index=True)
-    message_thread_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    message_thread_id: Mapped[int | None] = mapped_column(TELEGRAM_ID_TYPE, index=True)
     sender_name: Mapped[str | None]
     username: Mapped[str | None]
     text: Mapped[str]
