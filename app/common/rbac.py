@@ -74,8 +74,8 @@ def normalize_role(role: str | Role) -> Role:
     if isinstance(role, Role):
         return role
     value = str(role)
-    if value in LEGACY_ROLE_MAP:
-        return LEGACY_ROLE_MAP[value]
+    if value not in ALLOWED_ROLE_VALUES:
+        raise ValueError(f"Unsupported Komandus role: {value}. Use Position for business titles.")
     return Role(value)
 
 
