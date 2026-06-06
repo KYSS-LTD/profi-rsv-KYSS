@@ -89,7 +89,7 @@ class OrganizationUnitService:
         return query
 
     def _allowed_department_ids(self, user):
-        if user.role in {Role.MANAGER.value, Role.SUPER_ADMIN.value}:
+        if user.role in {Role.OWNER.value, Role.ADMIN.value}:
             return None
         if user.department_id:
             return [user.department_id]

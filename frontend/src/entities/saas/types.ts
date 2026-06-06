@@ -1,4 +1,4 @@
-export type Role = 'SUPER_ADMIN' | 'ORG_OWNER' | 'MANAGER' | 'DEPARTMENT_MANAGER' | 'TEAM_LEAD' | 'PRODUCT_MANAGER' | 'EMPLOYEE' | 'VIEWER';
+export type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'EMPLOYEE' | 'OBSERVER';
 
 export type CurrentUser = {
   id: string;
@@ -7,6 +7,7 @@ export type CurrentUser = {
   full_name?: string | null;
   role: Role;
   department_id?: string | null;
+  permission_scopes?: string[] | null;
   team_id?: string | null;
   must_change_password?: boolean;
   permissions?: string[];
@@ -59,6 +60,7 @@ export type Employee = {
   email?: string | null;
   role: Role;
   department_id?: string | null;
+  permission_scopes?: string[] | null;
   team_id?: string | null;
   position?: string | null;
   telegram_username?: string | null;
