@@ -2,14 +2,11 @@ from enum import StrEnum
 
 
 class Role(StrEnum):
-    SUPER_ADMIN = "SUPER_ADMIN"
-    ORG_OWNER = "ORG_OWNER"
-    MANAGER = "MANAGER"  # Backward-compatible alias for legacy org owner accounts.
-    DEPARTMENT_MANAGER = "DEPARTMENT_MANAGER"
-    TEAM_LEAD = "TEAM_LEAD"
-    PRODUCT_MANAGER = "PRODUCT_MANAGER"
+    OWNER = "OWNER"
+    ADMIN = "ADMIN"
+    MANAGER = "MANAGER"
     EMPLOYEE = "EMPLOYEE"
-    VIEWER = "VIEWER"
+    OBSERVER = "OBSERVER"
 
 
 class Permission(StrEnum):
@@ -24,6 +21,22 @@ class Permission(StrEnum):
     CAN_MANAGE_TEAMS = "can_manage_teams"
     CAN_OVERRIDE_LLM = "can_override_llm"
     CAN_VIEW_AUDIT_LOGS = "can_view_audit_logs"
+    CAN_MANAGE_USERS = "can_manage_users"
+    CAN_MANAGE_HIERARCHY = "can_manage_hierarchy"
+    CAN_MANAGE_PERMISSIONS = "can_manage_permissions"
+    CAN_MANAGE_BILLING = "can_manage_billing"
+    CAN_DELETE_ORGANIZATION = "can_delete_organization"
+
+
+class PermissionScope(StrEnum):
+    USERS = "users"
+    TASKS = "tasks"
+    ANALYTICS = "analytics"
+    DEPARTMENTS = "departments"
+    INTEGRATIONS = "integrations"
+    FINANCE = "finance"
+    BILLING = "billing"
+    SETTINGS = "settings"
 
 
 class TaskStatus(StrEnum):

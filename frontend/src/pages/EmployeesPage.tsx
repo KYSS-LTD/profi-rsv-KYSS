@@ -14,8 +14,8 @@ import { Loader } from '../shared/ui/Loader';
 import { PageHeader } from '../shared/ui/PageHeader';
 import { Select } from '../shared/ui/Select';
 
-const roles: Role[] = ['ORG_OWNER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD', 'PRODUCT_MANAGER', 'EMPLOYEE', 'VIEWER'];
-const roleLabel: Record<Role, string> = { SUPER_ADMIN: 'Super Admin', ORG_OWNER: 'Владелец организации', MANAGER: 'Менеджер (legacy)', DEPARTMENT_MANAGER: 'Руководитель отдела', TEAM_LEAD: 'Team Lead', PRODUCT_MANAGER: 'Product Manager', EMPLOYEE: 'Сотрудник', VIEWER: 'Наблюдатель' };
+const roles: Role[] = ['OWNER', 'ADMIN', 'MANAGER', 'EMPLOYEE', 'OBSERVER'];
+const roleLabel: Record<Role, string> = { OWNER: 'Владелец', ADMIN: 'Администратор', MANAGER: 'Руководитель', EMPLOYEE: 'Сотрудник', OBSERVER: 'Наблюдатель' };
 
 export function EmployeesPage() {
   const queryClient = useQueryClient();
@@ -38,7 +38,7 @@ export function EmployeesPage() {
     total: employees.length,
     active: employees.filter((e) => e.is_active).length,
     telegram: employees.filter((e) => e.telegram_status === 'CONNECTED').length,
-    managers: employees.filter((e) => ['ORG_OWNER', 'MANAGER', 'DEPARTMENT_MANAGER', 'TEAM_LEAD', 'PRODUCT_MANAGER'].includes(e.role)).length,
+    managers: employees.filter((e) => ['OWNER', 'ADMIN', 'MANAGER'].includes(e.role)).length,
   }), [employees]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['v2', 'employees'] });
@@ -94,7 +94,7 @@ function EmployeeCard({ employee, department, team, onActivate, onDeactivate, on
   const status = telegramStatus(employee);
   return <Card className={!employee.is_active ? 'opacity-60' : ''}>
     <div className="flex items-start gap-4"><div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-stone-100 text-lg font-semibold text-stone-700">{employee.full_name.slice(0, 1)}</div><div className="min-w-0 flex-1"><h3 className="truncate text-lg font-semibold text-stone-950">{employee.full_name}</h3><p className="truncate text-sm text-stone-500">{employee.position || 'Должность не указана'}</p><p className="mt-1 flex items-center gap-1 truncate text-sm text-stone-500"><AtSign className="h-3.5 w-3.5" />{employee.telegram_username || employee.email}</p></div><Badge tone={status.tone}>{status.label}</Badge></div>
-    <div className="mt-5 grid gap-3 sm:grid-cols-2"><Info label="Роль" value={roleLabel[employee.role]} /><Info label="Отдел" value={department} /><Info label="Команда" value={team} /><Info label="Username" value={employee.telegram_username || '—'} /><Info label="Статус Telegram" value={status.label} /><Info label="Telegram ID" value={employee.telegram_id ? String(employee.telegram_id) : '—'} /><Info label="Подключен" value={employee.telegram_connected_at ? new Date(employee.telegram_connected_at).toLocaleString('ru-RU') : '—'} /><Info label="Активность" value={employee.is_active ? 'Активен' : 'Деактивирован'} /></div>
+    <div className="mt-5 grid gap-3 sm:grid-cols-2"><Info label="Роль" value={roleLabel[employee.role] ?? employee.role} /><Info label="Отдел" value={department} /><Info label="Команда" value={team} /><Info label="Username" value={employee.telegram_username || '—'} /><Info label="Статус Telegram" value={status.label} /><Info label="Telegram ID" value={employee.telegram_id ? String(employee.telegram_id) : '—'} /><Info label="Подключен" value={employee.telegram_connected_at ? new Date(employee.telegram_connected_at).toLocaleString('ru-RU') : '—'} /><Info label="Активность" value={employee.is_active ? 'Активен' : 'Деактивирован'} /></div>
     <div className="mt-5 flex flex-wrap gap-2">{employee.is_active ? <Button variant="secondary" onClick={onDeactivate}>Деактивировать</Button> : <Button variant="secondary" onClick={onActivate}>Активировать</Button>}<Button variant="secondary" onClick={onRestore}><RotateCcw className="h-4 w-4" />Восстановить</Button><Button variant="secondary" onClick={() => navigator.clipboard.writeText(employee.invitation_text || '')}><Copy className="h-4 w-4" />Скопировать приглашение</Button><Button variant="danger" onClick={onDelete}><Trash2 className="h-4 w-4" />Удалить</Button></div>
   </Card>;
 }

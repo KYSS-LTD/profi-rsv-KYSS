@@ -6,6 +6,7 @@ import { AIInboxPage } from '../pages/AIInboxPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { DepartmentsPage } from '../pages/DepartmentsPage';
 import { NotificationsPage } from '../pages/NotificationsPage';
+import { OrgMapPage } from '../pages/OrgMapPage';
 import { SetupWizardPage } from '../pages/SetupWizardPage';
 import { BoardsPage } from '../pages/BoardsPage';
 import { EmployeesPage } from '../pages/EmployeesPage';
@@ -32,6 +33,7 @@ export const router = createBrowserRouter([
           { path: 'ai-inbox', element: <AIInboxPage /> },
           { path: 'tasks', element: <SaasTasksPage /> },
           { path: 'employees', element: <EmployeesPage /> },
+          { path: 'org-map', element: <OrgMapPage /> },
           { path: 'departments', element: <DepartmentsPage /> },
           { path: 'boards', element: <BoardsPage /> },
           { path: 'suggestions', element: <SuggestionsPage /> },

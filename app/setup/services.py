@@ -10,6 +10,7 @@ from app.auth.repositories import UserRepository
 from app.auth.services import AuthService
 from app.common.enums import Role
 from app.common.security import hash_password
+from app.common.rbac import scopes_for_role
 from app.models.models import Organization, User
 from app.organizations.repositories import OrganizationRepository
 from app.setup.schemas import SetupRequest
@@ -38,7 +39,8 @@ class SetupService:
                 email=payload.email.lower(),
                 password_hash=hash_password(payload.password),
                 full_name=payload.full_name.strip(),
-                role=Role.ORG_OWNER.value,
+                role=Role.OWNER.value,
+                permission_scopes=sorted(scope.value for scope in scopes_for_role(Role.OWNER)),
                 is_active=True,
             )
             self.db.add(user)

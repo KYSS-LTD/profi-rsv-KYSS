@@ -13,7 +13,7 @@ class EmployeeRepository:
 
     def get_for_org(self, employee_id: UUID, organization_id: UUID, requester_role: str):
         query = self.db.query(Employee).filter(Employee.id == employee_id)
-        if requester_role != Role.SUPER_ADMIN.value:
+        if requester_role != Role.OWNER.value:
             query = query.filter(Employee.organization_id == organization_id)
         return query.first()
 

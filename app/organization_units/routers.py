@@ -18,12 +18,12 @@ def list_departments(current_user=Depends(get_current_user), db: Session = Depen
 
 
 @router.post("/departments", response_model=DepartmentResponse, status_code=201)
-def create_department(payload: DepartmentCreate, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
+def create_department(payload: DepartmentCreate, current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN)), db: Session = Depends(get_db)):
     return OrganizationUnitService(db).create_department(payload, current_user)
 
 
 @router.patch("/departments/{department_id}", response_model=DepartmentResponse)
-def update_department(department_id: UUID, payload: DepartmentUpdate, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
+def update_department(department_id: UUID, payload: DepartmentUpdate, current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN)), db: Session = Depends(get_db)):
     return OrganizationUnitService(db).update_department(department_id, payload, current_user)
 
 
@@ -33,7 +33,7 @@ def list_teams(department_id: UUID | None = None, current_user=Depends(get_curre
 
 
 @router.post("/teams", response_model=TeamResponse, status_code=201)
-def create_team(payload: TeamCreate, current_user=Depends(RoleChecker(Role.MANAGER)), db: Session = Depends(get_db)):
+def create_team(payload: TeamCreate, current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN)), db: Session = Depends(get_db)):
     return OrganizationUnitService(db).create_team(payload, current_user)
 
 
@@ -43,10 +43,10 @@ def list_chats(current_user=Depends(get_current_user), db: Session = Depends(get
 
 
 @router.post("/telegram/connect-code", response_model=ConnectCodeResponse)
-def create_telegram_connect_code(payload: ConnectCodeCreate, current_user=Depends(RoleChecker(Role.MANAGER, Role.DEPARTMENT_MANAGER)), db: Session = Depends(get_db)):
+def create_telegram_connect_code(payload: ConnectCodeCreate, current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN, Role.MANAGER)), db: Session = Depends(get_db)):
     return OrganizationUnitService(db).create_connect_code(payload, current_user)
 
 
 @router.patch("/chats/{chat_id}", response_model=OrganizationChatResponse)
-def update_chat(chat_id: UUID, ai_enabled: bool = Body(...), department_id: UUID | None = Body(default=None), current_user=Depends(RoleChecker(Role.MANAGER, Role.DEPARTMENT_MANAGER)), db: Session = Depends(get_db)):
+def update_chat(chat_id: UUID, ai_enabled: bool = Body(...), department_id: UUID | None = Body(default=None), current_user=Depends(RoleChecker(Role.OWNER, Role.ADMIN, Role.MANAGER)), db: Session = Depends(get_db)):
     return OrganizationUnitService(db).set_chat_ai(chat_id, ai_enabled, department_id, current_user)

@@ -10,6 +10,7 @@ from app.auth.magic import MagicLoginService
 from app.core.config import settings
 from app.common.access_scope import AccessScopeService
 from app.common.security import hash_password
+from app.common.rbac import normalize_role, scopes_for_role
 from app.employees.repositories import EmployeeRepository
 from app.employees.schemas import EmployeeCreate, EmployeeUpdate
 from app.models.models import Employee, TelegramAccountLink, User, Department, Team
@@ -43,6 +44,7 @@ class EmployeeService:
                 password_hash=hash_password(password),
                 full_name=payload.full_name,
                 role=payload.role.value,
+                permission_scopes=sorted(scope.value for scope in scopes_for_role(payload.role)),
                 department_id=payload.department_id,
                 team_id=payload.team_id,
                 must_change_password=True,
@@ -59,6 +61,7 @@ class EmployeeService:
             manager_id=payload.manager_id,
             email=email,
             role=payload.role.value,
+            permission_scopes=sorted(scope.value for scope in scopes_for_role(payload.role)),
             department_id=payload.department_id,
             team_id=payload.team_id,
             position=payload.position,
@@ -72,7 +75,7 @@ class EmployeeService:
             known_link.employee_id = employee.id
             self.db.commit()
             self._send_magic_login(employee)
-        self.audit.log(action="Create Employee", organization_id=user.organization_id, user_id=user.id, entity_type="Employee", entity_id=employee.id, metadata={"role": employee.role, "department_id": str(employee.department_id) if employee.department_id else None})
+        self.audit.log(action="Create Employee", organization_id=user.organization_id, user_id=user.id, entity_type="Employee", entity_id=employee.id, metadata={"role": normalize_role(employee.role).value, "department_id": str(employee.department_id) if employee.department_id else None})
         return self._serialize_employee(employee)
 
     def update(self, employee_id: UUID, payload: EmployeeUpdate, user):
@@ -99,6 +102,7 @@ class EmployeeService:
             if db_user:
                 db_user.full_name = employee.full_name
                 db_user.role = employee.role
+                db_user.permission_scopes = sorted(scope.value for scope in scopes_for_role(employee.role))
                 db_user.department_id = employee.department_id
                 db_user.team_id = employee.team_id
                 if employee.email:
@@ -163,7 +167,7 @@ class EmployeeService:
             "manager_id": employee.manager_id,
             "full_name": employee.full_name,
             "email": employee.email,
-            "role": employee.role,
+            "role": normalize_role(employee.role).value,
             "department_id": employee.department_id,
             "team_id": employee.team_id,
             "position": employee.position,
