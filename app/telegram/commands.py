@@ -21,8 +21,10 @@ class TelegramCommandRouter:
         self.telegram = telegram or TelegramService()
         self.audit = AuditService(db)
         self.notifications = TelegramNotificationService(db, self.telegram)
+        self._current_topic: int | None = None
 
     async def dispatch(self, msg: dict):
+        self._current_topic = msg.get("message_thread_id")
         text = (msg.get("text") or "").strip()
         if not text.startswith("/"):
             return None
@@ -104,6 +106,7 @@ class TelegramCommandRouter:
         return {"status": "answered"}
 
     async def _employee_command(self, msg: dict, command: str):
+        self._current_topic = msg.get("message_thread_id")
         chat_id = (msg.get("chat") or {}).get("id")
         sender = msg.get("from") or {}
         employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
@@ -136,11 +139,12 @@ class TelegramCommandRouter:
     def main_menu_keyboard(self):
         return {"inline_keyboard": [[{"text": "📋 Мои задачи", "callback_data": "menu:tasks"}, {"text": "⏰ Сегодня", "callback_data": "menu:today"}], [{"text": "📆 Неделя", "callback_data": "menu:week"}, {"text": "📈 Статус", "callback_data": "menu:status"}], [{"text": "⚙️ Настройки", "callback_data": "menu:settings"}, {"text": "❓ Помощь", "callback_data": "menu:help"}], [{"text": "🔗 Войти в Командус", "callback_data": "menu:login"}]]}
 
-    async def _send_message(self, chat_id: int | None, text: str, reply_markup: dict | None = None):
+    async def _send_message(self, chat_id: int | None, text: str, reply_markup: dict | None = None, message_thread_id: int | None = None):
         if chat_id is None:
             raise TelegramDeliveryError("Cannot send Telegram message: chat_id is missing.")
+        topic = message_thread_id if message_thread_id is not None else getattr(self, "_current_topic", None)
         try:
-            return await self.telegram.send_message(chat_id, text, reply_markup=reply_markup)
+            return await self.telegram.send_message(chat_id, text, reply_markup=reply_markup, message_thread_id=topic)
         except TelegramDeliveryError as exc:
             self.audit.log(action="Telegram Delivery Failed", entity_type="TelegramMessage", entity_id=str(chat_id), metadata={"error": str(exc)})
             raise

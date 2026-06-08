@@ -43,6 +43,15 @@ class V2TaskResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class V2TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1)
+    description: str | None = None
+    employee_id: UUID | None = None
+    department_id: UUID | None = None
+    team_id: UUID | None = None
+    due_at: datetime | None = None
+
+
 class TaskStatusUpdate(BaseModel):
     status: TaskStatus = Field(examples=["IN_PROGRESS"])
 

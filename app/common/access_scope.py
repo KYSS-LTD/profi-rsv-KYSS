@@ -72,9 +72,18 @@ class AccessScopeService:
             if scope.team_ids:
                 conditions.append(KomandusTask.team_id.in_(scope.team_ids))
             return query.filter(or_(*conditions)) if conditions else query.filter(false())
-        # Employees (and any other non-privileged role) see only their own tasks.
-        ids = self._visible_employee_ids(user)
-        return query.filter(KomandusTask.employee_id.in_(ids)) if ids else query.filter(false())
+        # Employees see their own tasks plus their team's board (the DevOps-style
+        # local kanban); when teamless they fall back to their department, and
+        # only to personal tasks when neither is set.
+        current = self.current_employee(user)
+        if not current:
+            return query.filter(false())
+        conditions = [KomandusTask.employee_id == current.id]
+        if current.team_id:
+            conditions.append(KomandusTask.team_id == current.team_id)
+        elif current.department_id:
+            conditions.append(KomandusTask.department_id == current.department_id)
+        return query.filter(or_(*conditions))
 
     def visible_scope_ids(self, user: User) -> ScopeIds:
         employees = self.get_visible_employees(user).all()

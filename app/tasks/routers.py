@@ -6,7 +6,7 @@ from app.auth.dependencies import get_current_user
 from app.common.enums import Permission
 from app.common.rbac import PermissionChecker
 from app.dependencies import get_db
-from app.tasks.schemas import TaskStatusUpdate, V2TaskCreate, V2TaskResponse
+from app.tasks.schemas import TaskStatusUpdate, V2TaskCreate, V2TaskResponse, V2TaskUpdate
 from app.tasks.services import V2TaskService
 
 router = APIRouter(prefix="/api/v2/tasks", tags=["Tasks v2"])
@@ -25,6 +25,11 @@ def create_task(payload: V2TaskCreate, current_user=Depends(PermissionChecker(Pe
 @router.patch("/{task_id}/status", response_model=V2TaskResponse, summary="Move task", description="Move a task through the validated lifecycle state machine.")
 def move_task(task_id: UUID, payload: TaskStatusUpdate, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     return V2TaskService(db).change_status(task_id, payload.status, current_user)
+
+
+@router.patch("/{task_id}", response_model=V2TaskResponse, summary="Edit task", description="Edit task fields (title, description, assignee, deadline) within the caller's access scope.")
+def update_task(task_id: UUID, payload: V2TaskUpdate, current_user=Depends(PermissionChecker(Permission.CAN_ASSIGN_TASKS)), db: Session = Depends(get_db)):
+    return V2TaskService(db).update(task_id, payload, current_user)
 
 
 @router.post("/{task_id}/confirm", response_model=V2TaskResponse, summary="Confirm task", description="Approve or decline an extracted task and enqueue downstream board synchronization.")

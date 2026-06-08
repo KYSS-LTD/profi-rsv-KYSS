@@ -157,8 +157,17 @@ class TaskDecisionEngine:
             return {"status": "clarification_requested", "task_id": data.split(":", 1)[1]}
         if data.startswith("mgr_approve:"):
             return await self._handle_manager_approve(callback_id, data.split(":", 1)[1], chat_id, msg_id)
+        if data.startswith("mgr_reject_false:"):
+            return await self._handle_manager_reject_false(callback_id, data.split(":", 1)[1], chat_id, msg_id)
         if data.startswith("mgr_reject:"):
             return await self._handle_manager_reject(callback_id, data.split(":", 1)[1], chat_id, msg_id)
+        if data.startswith("mgr_reassign:"):
+            return await self._handle_manager_reassign_prompt(callback_id, data.split(":", 1)[1], chat_id, msg_id)
+        if data.startswith("mgr_assign:"):
+            _, reassign_task_id, reassign_employee_id = data.split(":", 2)
+            return await self._handle_manager_assign(callback_id, reassign_task_id, reassign_employee_id, chat_id, msg_id)
+        if data.startswith("mgr_resend:"):
+            return await self._handle_manager_resend(callback_id, data.split(":", 1)[1], chat_id, msg_id)
 
         if not data.startswith("task_"):
             return {"status": "ignored", "reason": "unsupported_callback"}
@@ -206,12 +215,13 @@ class TaskDecisionEngine:
 
     async def _connect_chat(self, msg: dict, code: str):
         chat = msg.get("chat") or {}
+        topic_id = msg.get("message_thread_id")
         if chat.get("type") not in {"group", "supergroup", "channel"}:
-            await self._send_message(chat.get("id"), "Команду /connect нужно выполнить в рабочем групповом чате.")
+            await self._send_message(chat.get("id"), "Команду /connect нужно выполнить в рабочем групповом чате.", message_thread_id=topic_id)
             return {"status": "ignored", "reason": "not_group_chat"}
         code_row = self.db.query(TelegramConnectCode).filter(TelegramConnectCode.code == code, TelegramConnectCode.status == "PENDING").first()
         if not code_row:
-            await self._send_message(chat.get("id"), "Код подключения не найден или уже использован.")
+            await self._send_message(chat.get("id"), "Код подключения не найден или уже использован.", message_thread_id=topic_id)
             return {"status": "rejected", "reason": "invalid_code"}
         members_count = await self._get_chat_member_count(chat.get("id"))
         bot_is_admin = await self._bot_is_admin(chat.get("id"))
@@ -227,16 +237,15 @@ class TaskDecisionEngine:
         org_chat.bot_is_admin = bot_is_admin
         org_chat.is_active = True
         org_chat.ai_enabled = True
-        topic_id = msg.get("message_thread_id")
         task_source = self._ensure_task_source(code_row.organization_id, chat.get("id"), chat.get("title") or "Рабочий чат", chat.get("type"), topic_id, code_row.department_id, code_row.team_id)
         code_row.status = "USED"
         from datetime import datetime
         code_row.used_at = datetime.utcnow()
         self.db.commit()
         if bot_is_admin:
-            await self._send_message(chat.get("id"), f"✅ Источник задач подключен к Командусу: {task_source.title}. AI-анализ сообщений включен.")
+            await self._send_message(chat.get("id"), f"✅ Источник задач подключен к Командусу: {task_source.title}. AI-анализ сообщений включен.", message_thread_id=topic_id)
         else:
-            await self._send_message(chat.get("id"), "⚠️ Чат подключен, но бот не является администратором. Назначьте бота администратором, иначе часть функций Telegram будет недоступна.")
+            await self._send_message(chat.get("id"), "⚠️ Чат подключен, но бот не является администратором. Назначьте бота администратором, иначе часть функций Telegram будет недоступна.", message_thread_id=topic_id)
         return {"status": "connected", "chat_id": chat.get("id"), "task_source_id": str(task_source.id), "members_count": members_count, "bot_is_admin": bot_is_admin}
 
     def _task_source_for_message(self, chat_id: int, topic_id: int | None) -> TaskSource | None:
@@ -381,11 +390,11 @@ class TaskDecisionEngine:
         return name or sender.get("username")
 
 
-    async def _send_message(self, chat_id: int | None, text: str, reply_markup: dict | None = None):
+    async def _send_message(self, chat_id: int | None, text: str, reply_markup: dict | None = None, message_thread_id: int | None = None):
         if chat_id is None:
             raise TelegramDeliveryError("Cannot send Telegram message: chat_id is missing.")
         try:
-            return await self.telegram.send_message(chat_id, text, reply_markup=reply_markup)
+            return await self.telegram.send_message(chat_id, text, reply_markup=reply_markup, message_thread_id=message_thread_id)
         except TelegramDeliveryError as exc:
             self.audit.log(action="Telegram Delivery Failed", entity_type="TelegramMessage", entity_id=str(chat_id), metadata={"error": str(exc)})
             raise
@@ -438,7 +447,10 @@ class TaskDecisionEngine:
             source_excerpt=candidate.source_excerpt,
             notify=False,
         )
-        await self._dispatch_detected_task(task, employee, organization_id, department_id, team_id, chat_id, topic_id)
+        # Reply inside the originating topic; fall back to the topic the source
+        # was bound to so a group reply never lands in General by accident.
+        effective_topic = topic_id or (task_source.telegram_topic_id if task_source else None)
+        await self._dispatch_detected_task(task, employee, organization_id, department_id, team_id, chat_id, effective_topic)
         return task
 
     async def _dispatch_detected_task(self, task: KomandusTask, employee: Employee | None, organization_id, department_id, team_id, chat_id: int, topic_id: int | None) -> dict:
@@ -553,7 +565,8 @@ class TaskDecisionEngine:
         self.db.commit()
         if chat_id and message_id:
             await self.telegram.edit_message_text(chat_id, message_id, f"❌ Задача отклонена: {task.title}\nПричина: {confirmation.decline_reason}")
-        await self.telegram.answer_callback_query(callback_id, "Отказ сохранен")
+        await self.telegram.answer_callback_query(callback_id, "Отказ сохранен. Передано менеджеру.")
+        await self._escalate_rejection_to_manager(task, confirmation.decline_reason)
         return {"status": "rejected", "task_id": task_id, "reason": confirmation.decline_reason}
 
     async def _handle_manager_approve(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
@@ -592,6 +605,129 @@ class TaskDecisionEngine:
             await self.telegram.edit_message_text(chat_id, message_id, f"❌ Задача отклонена менеджером: {task.title}")
         await self.telegram.answer_callback_query(callback_id, "Отклонено")
         return {"status": "rejected", "task_id": task_id}
+
+    async def _escalate_rejection_to_manager(self, task: KomandusTask, reason: str | None) -> None:
+        """Notify the responsible manager that an employee rejected a task in Telegram,
+        offering reassign / mark-as-false / resend actions."""
+        employee = self.db.query(Employee).filter(Employee.id == task.employee_id).first() if task.employee_id else None
+        manager = self._resolve_manager(task.organization_id, task.department_id, task.team_id, employee)
+        if not manager or not manager.telegram_id:
+            return
+        name = employee.full_name if employee else "Сотрудник"
+        text = (
+            f"⚠️ <b>{self.telegram._escape(name)}</b> отклонил задачу: {self.telegram._escape(task.title)}\n"
+            f"Причина: {self.telegram._escape(reason or 'не указана')}\n\n"
+            "Что сделать с задачей?"
+        )
+        markup = {"inline_keyboard": [
+            [{"text": "🔁 Переназначить", "callback_data": f"mgr_reassign:{task.id}"}],
+            [{"text": "🗑 Ложная", "callback_data": f"mgr_reject_false:{task.id}"}, {"text": "📩 Снова тому же", "callback_data": f"mgr_resend:{task.id}"}],
+        ]}
+        try:
+            await self.telegram.send_html_message(manager.telegram_id, text, reply_markup=markup)
+        except TelegramDeliveryError:
+            pass
+
+    def _reassignment_candidates(self, task: KomandusTask, limit: int = 10) -> list[Employee]:
+        query = self.db.query(Employee).filter(Employee.organization_id == task.organization_id, Employee.is_active.is_(True), Employee.telegram_id.isnot(None))
+        if task.employee_id:
+            query = query.filter(Employee.id != task.employee_id)
+        scoped = []
+        if task.team_id:
+            scoped = query.filter(Employee.team_id == task.team_id).limit(limit).all()
+        if not scoped and task.department_id:
+            scoped = query.filter(Employee.department_id == task.department_id).limit(limit).all()
+        if not scoped:
+            scoped = query.limit(limit).all()
+        return scoped
+
+    async def _handle_manager_reassign_prompt(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
+        task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
+        if not task:
+            await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
+            return {"status": "not_found"}
+        candidates = self._reassignment_candidates(task)
+        if not candidates:
+            await self.telegram.answer_callback_query(callback_id, "Нет подключённых сотрудников для переназначения", show_alert=True)
+            return {"status": "no_candidates", "task_id": task_id}
+        rows = [[{"text": employee.full_name, "callback_data": f"mgr_assign:{task.id}:{employee.id}"}] for employee in candidates]
+        if chat_id and message_id:
+            await self.telegram.edit_message_text(chat_id, message_id, f"Кому переназначить задачу: {task.title}?", reply_markup={"inline_keyboard": rows})
+        await self.telegram.answer_callback_query(callback_id, "Выберите исполнителя")
+        return {"status": "reassign_prompt", "task_id": task_id, "candidates": len(candidates)}
+
+    async def _handle_manager_assign(self, callback_id: str, task_id: str, employee_id: str, chat_id: int | None, message_id: int | None):
+        task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
+        if not task:
+            await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
+            return {"status": "not_found"}
+        employee = self.db.query(Employee).filter(Employee.id == UUID(employee_id), Employee.organization_id == task.organization_id, Employee.is_active.is_(True)).first()
+        if not employee:
+            await self.telegram.answer_callback_query(callback_id, "Сотрудник не найден", show_alert=True)
+            return {"status": "employee_not_found"}
+        task.employee_id = employee.id
+        task.status = TaskStatus.ACCEPTED.value
+        task.rejected_at = None
+        self._reset_confirmation(task, employee.id)
+        self.db.commit()
+        forwarded = False
+        if employee.telegram_id:
+            try:
+                await self.telegram.send_task_confirmation(employee, task)
+                forwarded = True
+            except TelegramDeliveryError:
+                forwarded = False
+        if chat_id and message_id:
+            suffix = "" if forwarded else " (нет Telegram у сотрудника)"
+            await self.telegram.edit_message_text(chat_id, message_id, f"🔁 Переназначено на {employee.full_name}: {task.title}{suffix}")
+        await self.telegram.answer_callback_query(callback_id, "Переназначено")
+        return {"status": "reassigned", "task_id": task_id, "employee_id": employee_id, "forwarded": forwarded}
+
+    async def _handle_manager_reject_false(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
+        task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
+        if not task:
+            await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
+            return {"status": "not_found"}
+        task.status = TaskStatus.REJECTED.value
+        task.rejected_at = datetime.utcnow()
+        self.db.commit()
+        if chat_id and message_id:
+            await self.telegram.edit_message_text(chat_id, message_id, f"🗑 Задача отклонена как ложная: {task.title}")
+        await self.telegram.answer_callback_query(callback_id, "Отклонено как ложная")
+        return {"status": "rejected_false", "task_id": task_id}
+
+    async def _handle_manager_resend(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
+        task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
+        if not task:
+            await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
+            return {"status": "not_found"}
+        employee = self.db.query(Employee).filter(Employee.id == task.employee_id, Employee.is_active.is_(True)).first() if task.employee_id else None
+        if not employee or not employee.telegram_id:
+            await self.telegram.answer_callback_query(callback_id, "У сотрудника нет Telegram — переназначьте задачу", show_alert=True)
+            return {"status": "no_telegram", "task_id": task_id}
+        task.status = TaskStatus.ACCEPTED.value
+        task.rejected_at = None
+        self._reset_confirmation(task, employee.id)
+        self.db.commit()
+        try:
+            await self.telegram.send_task_confirmation(employee, task)
+        except TelegramDeliveryError:
+            await self.telegram.answer_callback_query(callback_id, "Не удалось доставить сотруднику", show_alert=True)
+            return {"status": "delivery_failed", "task_id": task_id}
+        if chat_id and message_id:
+            await self.telegram.edit_message_text(chat_id, message_id, f"📩 Задача снова отправлена {employee.full_name}: {task.title}")
+        await self.telegram.answer_callback_query(callback_id, "Отправлено снова")
+        return {"status": "resent", "task_id": task_id, "employee_id": str(employee.id)}
+
+    def _reset_confirmation(self, task: KomandusTask, employee_id) -> None:
+        confirmation = self.db.query(TaskConfirmation).filter(TaskConfirmation.task_id == task.id).first()
+        if not confirmation:
+            confirmation = TaskConfirmation(organization_id=task.organization_id, task_id=task.id, employee_id=employee_id)
+            self.db.add(confirmation)
+        confirmation.employee_id = employee_id
+        confirmation.status = ConfirmationStatus.PENDING.value
+        confirmation.decline_reason = None
+        confirmation.responded_at = None
 
     async def _handle_chat_member(self, payload: dict):
         return await self._sync_chat_membership(payload)

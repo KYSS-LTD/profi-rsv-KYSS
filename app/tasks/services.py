@@ -63,6 +63,20 @@ class V2TaskService:
         except TelegramDeliveryError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    def update(self, task_id: UUID, payload, user):
+        task = self.repo.get_scoped(task_id, user)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        values = payload.model_dump(exclude_unset=True)
+        new_assignee = values.get("employee_id")
+        if "employee_id" in values and new_assignee is not None and not AccessScopeService(self.db).can_access_employee(user, new_assignee):
+            raise HTTPException(status_code=403, detail="Assignee outside access scope")
+        for field, value in values.items():
+            setattr(task, field, value)
+        self.repo.save(task)
+        self.audit.log(action="Update Task", organization_id=task.organization_id, user_id=user.id, entity_type="Task", entity_id=task.id, metadata={"fields": sorted(values.keys())})
+        return task
+
     def change_status(self, task_id: UUID, new_status: TaskStatus, user):
         task = self.repo.get_scoped(task_id, user)
         if not task:
