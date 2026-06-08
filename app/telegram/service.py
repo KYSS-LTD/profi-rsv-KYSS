@@ -64,8 +64,10 @@ class TelegramService:
         except Exception:
             return response.text
 
-    async def send_message(self, chat_id: int | str, text: str, reply_markup: dict[str, Any] | None = None, parse_mode: str | None = None) -> dict[str, Any]:
+    async def send_message(self, chat_id: int | str, text: str, reply_markup: dict[str, Any] | None = None, parse_mode: str | None = None, message_thread_id: int | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
+        if message_thread_id:
+            payload["message_thread_id"] = message_thread_id
         if parse_mode:
             payload["parse_mode"] = parse_mode
         safe_markup = self._sanitize_reply_markup(reply_markup)
@@ -73,15 +75,15 @@ class TelegramService:
             payload["reply_markup"] = safe_markup
         return await self._request("sendMessage", payload)
 
-    async def send_html_message(self, chat_id: int | str, html: str, reply_markup: dict[str, Any] | None = None) -> dict[str, Any]:
-        return await self.send_message(chat_id, html, reply_markup=reply_markup, parse_mode="HTML")
+    async def send_html_message(self, chat_id: int | str, html: str, reply_markup: dict[str, Any] | None = None, message_thread_id: int | None = None) -> dict[str, Any]:
+        return await self.send_message(chat_id, html, reply_markup=reply_markup, parse_mode="HTML", message_thread_id=message_thread_id)
 
-    async def send_group_message(self, chat_id: int | str, text: str, reply_markup: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def send_group_message(self, chat_id: int | str, text: str, reply_markup: dict[str, Any] | None = None, message_thread_id: int | None = None) -> dict[str, Any]:
         bot_member = await self.get_chat_member(chat_id, "@self")
         status = bot_member.get("result", {}).get("status")
         if status not in {"administrator", "creator", "member"}:
             raise TelegramDeliveryError("Bot is not a member of this chat or has no permission to post messages.")
-        return await self.send_message(chat_id, text, reply_markup=reply_markup)
+        return await self.send_message(chat_id, text, reply_markup=reply_markup, message_thread_id=message_thread_id)
 
     async def send_task_confirmation(self, employee: Employee, task: KomandusTask) -> dict[str, Any]:
         if not employee.telegram_id:
@@ -95,6 +97,20 @@ class TelegramService:
         )
         markup = {"inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"task_accept:{task.id}"}, {"text": "❌ Отказаться", "callback_data": f"task_reject:{task.id}"}], [{"text": "💬 Уточнить", "callback_data": f"task_clarify:{task.id}"}]]}
         return await self.send_html_message(employee.telegram_id, text, reply_markup=markup)
+
+    async def send_manager_task_confirmation(self, manager: Employee, task: KomandusTask, employee_hint: str | None = None) -> dict[str, Any]:
+        if not manager.telegram_id:
+            raise TelegramDeliveryError(f"Manager {manager.id} has no telegram_user_id. Ask them to send /start to the bot.")
+        text = (
+            "<b>Задача требует подтверждения</b>\n\n"
+            f"<b>Название:</b> {self._escape(task.title)}\n"
+            f"<b>Описание:</b> {self._escape(task.description or '—')}\n"
+            f"<b>Предполагаемый исполнитель:</b> {self._escape(employee_hint or 'не определён')}\n"
+            f"<b>Источник:</b> Telegram {task.source_chat_id or '—'}\n"
+            f"<b>Уверенность AI:</b> {int((task.llm_confidence or 0) * 100)}%"
+        )
+        markup = {"inline_keyboard": [[{"text": "✅ Утвердить", "callback_data": f"mgr_approve:{task.id}"}, {"text": "❌ Отклонить", "callback_data": f"mgr_reject:{task.id}"}]]}
+        return await self.send_html_message(manager.telegram_id, text, reply_markup=markup)
 
     async def send_activation_link(self, employee: Employee, activation_url: str | None) -> dict[str, Any]:
         if not employee.telegram_id:

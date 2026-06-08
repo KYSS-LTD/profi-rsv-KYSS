@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlalchemy import false, or_
 from sqlalchemy.orm import Query, Session
 
 from app.common.enums import OrganizationMode, Role
@@ -58,8 +59,22 @@ class AccessScopeService:
         role = normalize_role(user.role)
         if role in {Role.OWNER, Role.ADMIN, Role.OBSERVER} or self._is_simple_manager(user):
             return query
+        if role == Role.MANAGER:
+            # Hierarchy manager: tasks of the reporting subtree PLUS any task scoped to
+            # a department/team the manager owns — including unassigned tasks
+            # (employee_id IS NULL) that AI extraction or YouGile sync produced.
+            scope = self.visible_scope_ids(user)
+            conditions = []
+            if scope.employee_ids:
+                conditions.append(KomandusTask.employee_id.in_(scope.employee_ids))
+            if scope.department_ids:
+                conditions.append(KomandusTask.department_id.in_(scope.department_ids))
+            if scope.team_ids:
+                conditions.append(KomandusTask.team_id.in_(scope.team_ids))
+            return query.filter(or_(*conditions)) if conditions else query.filter(false())
+        # Employees (and any other non-privileged role) see only their own tasks.
         ids = self._visible_employee_ids(user)
-        return query.filter(KomandusTask.employee_id.in_(ids) if ids else False)
+        return query.filter(KomandusTask.employee_id.in_(ids)) if ids else query.filter(false())
 
     def visible_scope_ids(self, user: User) -> ScopeIds:
         employees = self.get_visible_employees(user).all()

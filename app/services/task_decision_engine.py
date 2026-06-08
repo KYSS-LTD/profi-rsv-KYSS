@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.audit.services import AuditService
 from app.auth.magic import MagicLoginService
-from app.common.enums import ConfirmationStatus, TaskSourceType, TaskStatus
+from app.common.enums import ConfirmationStatus, Role, TaskSourceType, TaskStatus
+from app.common.rbac import normalize_role
 from app.models.models import Employee, KomandusTask, Message, Notification, OrganizationChat, TaskCandidate, TaskConfirmation, TaskSource, TelegramAccountLink, TelegramChat, TelegramConnectCode
 from app.services.kanban_adapter import KanbanAdapter
 from app.services.llm_service import llm_service
@@ -17,6 +18,49 @@ from app.telegram.callbacks import TelegramCallbackRouter
 from app.telegram.commands import TelegramCommandRouter
 from app.telegram.service import TelegramDeliveryError, TelegramService
 
+
+
+def _name_match_strength(full_name: str | None, needle: str) -> int:
+    name = (full_name or "").strip().lower()
+    if not name or not needle:
+        return 0
+    if name == needle:
+        return 3
+    if needle in name.split():
+        return 2
+    if needle in name:
+        return 1
+    return 0
+
+
+def match_employee_by_name(assignee_raw: str | None, candidates, *, team_id=None, department_id=None):
+    """Resolve a free-text assignee to a single employee, or None if absent/ambiguous.
+
+    Pure helper (no DB) so the matching rules can be unit-tested. ``candidates``
+    are objects exposing ``full_name``, ``team_id`` and ``department_id``. The
+    same-source team/department is used to break ties; genuine ambiguity yields
+    None so the task falls back to manager triage.
+    """
+    if not assignee_raw:
+        return None
+    needle = assignee_raw.strip().lower().lstrip("@")
+    if not needle:
+        return None
+
+    def scope_rank(employee) -> int:
+        if team_id and getattr(employee, "team_id", None) == team_id:
+            return 2
+        if department_id and getattr(employee, "department_id", None) == department_id:
+            return 1
+        return 0
+
+    scored = [(employee, _name_match_strength(getattr(employee, "full_name", None), needle)) for employee in candidates]
+    scored = [(employee, strength) for employee, strength in scored if strength > 0]
+    if not scored:
+        return None
+    best_key = max((strength, scope_rank(employee)) for employee, strength in scored)
+    winners = [employee for employee, strength in scored if (strength, scope_rank(employee)) == best_key]
+    return winners[0] if len(winners) == 1 else None
 
 
 class TaskDecisionEngine:
@@ -39,7 +83,7 @@ class TaskDecisionEngine:
             return await self._handle_my_chat_member(payload["my_chat_member"])
         return {"status": "ignored", "reason": "unsupported_update"}
 
-    async def process_chat_context(self, chat_id: int) -> list[TaskCandidate]:
+    async def process_chat_context(self, chat_id: int, task_source: TaskSource | None = None, org_chat: OrganizationChat | None = None, topic_id: int | None = None) -> list[KomandusTask]:
         messages = self._get_unprocessed_chat_messages(chat_id)
         if not messages:
             return []
@@ -53,7 +97,19 @@ class TaskDecisionEngine:
 
         candidates = self._save_candidates(last_message, extraction["tasks"])
         self._mark_chat_processed(chat_id, last_message.telegram_message_id)
-        return candidates
+
+        # Resolve scoping context when invoked outside the webhook (e.g. /analyze).
+        if task_source is None:
+            task_source = self._task_source_for_message(chat_id, topic_id)
+        if org_chat is None:
+            org_chat = self.db.query(OrganizationChat).filter(OrganizationChat.telegram_chat_id == chat_id).first()
+
+        created: list[KomandusTask] = []
+        for candidate in candidates:
+            task = await self._materialize_and_route(candidate, last_message, task_source, org_chat, chat_id, topic_id)
+            if task:
+                created.append(task)
+        return created
 
     async def _handle_message(self, msg: dict):
         chat = msg.get("chat") or {}
@@ -74,15 +130,12 @@ class TaskDecisionEngine:
             task_source = self._ensure_task_source(org_chat.organization_id, chat_id, chat.get("title") or "Рабочий чат", chat.get("type"), None, org_chat.department_id, org_chat.team_id)
         if (not task_source or not task_source.ai_enabled) and chat.get("type") in {"group", "supergroup", "channel"}:
             return {"status": "stored", "message_id": db_message.id, "ai_enabled": False}
-        candidates = await self.process_chat_context(chat_id)
-
-        for candidate in candidates:
-            await self._send_confirmation_inline(chat_id, candidate)
+        tasks = await self.process_chat_context(chat_id, task_source=task_source, org_chat=org_chat, topic_id=topic_id)
 
         return {
             "status": "processed",
             "message_id": db_message.id,
-            "candidates_created": len(candidates),
+            "tasks_created": len(tasks),
         }
 
     async def _handle_task_callback(self, callback: dict):
@@ -102,6 +155,10 @@ class TaskDecisionEngine:
         if data.startswith("task_clarify:"):
             await self.telegram.answer_callback_query(callback_id, "Менеджеру отправлен запрос на уточнение.")
             return {"status": "clarification_requested", "task_id": data.split(":", 1)[1]}
+        if data.startswith("mgr_approve:"):
+            return await self._handle_manager_approve(callback_id, data.split(":", 1)[1], chat_id, msg_id)
+        if data.startswith("mgr_reject:"):
+            return await self._handle_manager_reject(callback_id, data.split(":", 1)[1], chat_id, msg_id)
 
         if not data.startswith("task_"):
             return {"status": "ignored", "reason": "unsupported_callback"}
@@ -345,17 +402,111 @@ class TaskDecisionEngine:
         status = member.get("result", {}).get("status")
         return status in {"administrator", "creator"}
 
-    async def _send_confirmation_inline(self, chat_id: int, candidate: TaskCandidate):
+    async def _materialize_and_route(self, candidate: TaskCandidate, message: Message, task_source: TaskSource | None, org_chat: OrganizationChat | None, chat_id: int, topic_id: int | None) -> KomandusTask | None:
+        organization_id = department_id = team_id = organization_chat_id = None
+        if task_source:
+            organization_id = task_source.organization_id
+            department_id = task_source.department_id
+            team_id = task_source.team_id
+        if org_chat:
+            organization_id = organization_id or org_chat.organization_id
+            department_id = department_id or org_chat.department_id
+            team_id = team_id or org_chat.team_id
+            organization_chat_id = org_chat.id
+        if organization_id is None:
+            # Without an organization context the task cannot be scoped or made
+            # visible on the kanban, so we skip creating an orphan record.
+            return None
+
+        employee = self._resolve_assignee(candidate.assignee_raw, organization_id, department_id, team_id)
+
+        from app.tasks.services import V2TaskService
+
+        task = V2TaskService(self.db).create_from_llm(
+            organization_id=organization_id,
+            employee_id=employee.id if employee else None,
+            title=candidate.title,
+            description=candidate.source_excerpt,
+            source_chat_id=chat_id,
+            source_message_id=message.telegram_message_id,
+            confidence=candidate.confidence or 0.0,
+            llm_model="telegram-detection",
+            extraction_version="engine-v1",
+            department_id=department_id,
+            team_id=team_id,
+            organization_chat_id=organization_chat_id,
+            source_excerpt=candidate.source_excerpt,
+            notify=False,
+        )
+        await self._dispatch_detected_task(task, employee, organization_id, department_id, team_id, chat_id, topic_id)
+        return task
+
+    async def _dispatch_detected_task(self, task: KomandusTask, employee: Employee | None, organization_id, department_id, team_id, chat_id: int, topic_id: int | None) -> dict:
+        confidence = task.llm_confidence or 0.0
+        # 1) Resolved assignee, high confidence, reachable → straight to their DM.
+        if employee and employee.telegram_id and confidence > 0.85:
+            try:
+                await self.telegram.send_task_confirmation(employee, task)
+                return {"routed_to": "employee", "employee_id": str(employee.id)}
+            except TelegramDeliveryError:
+                pass
+        # 2) Low confidence or unresolved assignee → responsible manager for triage.
+        manager = self._resolve_manager(organization_id, department_id, team_id, employee)
+        if manager and manager.telegram_id:
+            try:
+                await self.telegram.send_manager_task_confirmation(manager, task, employee_hint=employee.full_name if employee else None)
+                return {"routed_to": "manager", "manager_id": str(manager.id)}
+            except TelegramDeliveryError:
+                pass
+        # 3) Fallback → the originating group, inside the correct topic.
+        text, markup = self._task_card(task, employee)
+        try:
+            await self.telegram.send_group_message(chat_id, text, reply_markup=markup, message_thread_id=topic_id)
+            return {"routed_to": "group", "chat_id": chat_id, "topic_id": topic_id}
+        except TelegramDeliveryError:
+            return {"routed_to": "none", "task_id": str(task.id)}
+
+    def _resolve_assignee(self, assignee_raw: str | None, organization_id, department_id, team_id) -> Employee | None:
+        if not assignee_raw or not assignee_raw.strip():
+            return None
+        raw = assignee_raw.strip()
+        if raw.startswith("@"):
+            return (
+                self.db.query(Employee)
+                .filter(Employee.organization_id == organization_id, Employee.is_active.is_(True), func.lower(Employee.telegram_username) == raw.lower())
+                .first()
+            )
+        candidates = self.db.query(Employee).filter(Employee.organization_id == organization_id, Employee.is_active.is_(True)).all()
+        return match_employee_by_name(raw, candidates, team_id=team_id, department_id=department_id)
+
+    def _resolve_manager(self, organization_id, department_id, team_id, employee: Employee | None) -> Employee | None:
+        if employee and employee.manager_id:
+            manager = self.db.query(Employee).filter(Employee.id == employee.manager_id, Employee.is_active.is_(True)).first()
+            if manager and normalize_role(manager.role) == Role.MANAGER:
+                return manager
+        base = self.db.query(Employee).filter(Employee.organization_id == organization_id, Employee.is_active.is_(True), Employee.role == Role.MANAGER.value)
+        if team_id:
+            manager = base.filter(Employee.team_id == team_id).first()
+            if manager:
+                return manager
+        if department_id:
+            manager = base.filter(Employee.department_id == department_id).first()
+            if manager:
+                return manager
+        return base.first()
+
+    def _task_card(self, task: KomandusTask, employee: Employee | None) -> tuple[str, dict]:
+        assignee = employee.full_name if employee else "не назначен"
         text = (
             "🤖 Обнаружена задача!\n\n"
-            f"📝 Что сделать: {candidate.title}\n"
-            f"👤 Ответственный: {candidate.assignee_raw or 'Не назначен'}\n"
-            f"📅 Дедлайн: {candidate.deadline_raw or 'Не указан'}\n"
-            f"🎯 Уверенность AI: {int(candidate.confidence * 100)}%\n\n"
-            "Добавить задачу на Kanban-панель?"
+            f"📝 Что сделать: {task.title}\n"
+            f"👤 Ответственный: {assignee}\n"
+            f"📅 Дедлайн: {task.due_at.isoformat() if task.due_at else 'Не указан'}\n"
+            f"🎯 Уверенность AI: {int((task.llm_confidence or 0) * 100)}%\n\n"
+            "Подтвердите задачу:"
         )
-        markup = {"inline_keyboard": [[{"text": "👍 Подтвердить", "callback_data": f"task_approve_{candidate.id}"}, {"text": "👎 Отклонить", "callback_data": f"task_reject_{candidate.id}"}]]}
-        return await self.telegram.send_group_message(chat_id, text, reply_markup=markup)
+        markup = {"inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"task_accept:{task.id}"}, {"text": "❌ Отклонить", "callback_data": f"task_reject:{task.id}"}]]}
+        return text, markup
 
     async def _handle_task_accept(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
         task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
@@ -404,6 +555,43 @@ class TaskDecisionEngine:
             await self.telegram.edit_message_text(chat_id, message_id, f"❌ Задача отклонена: {task.title}\nПричина: {confirmation.decline_reason}")
         await self.telegram.answer_callback_query(callback_id, "Отказ сохранен")
         return {"status": "rejected", "task_id": task_id, "reason": confirmation.decline_reason}
+
+    async def _handle_manager_approve(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
+        task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
+        if not task:
+            await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
+            return {"status": "not_found"}
+        task.status = TaskStatus.ACCEPTED.value
+        task.accepted_at = datetime.utcnow()
+        self.db.commit()
+        # If an assignee is known, forward the task to them for personal acceptance.
+        forwarded = False
+        if task.employee_id:
+            employee = self.db.query(Employee).filter(Employee.id == task.employee_id, Employee.is_active.is_(True)).first()
+            if employee and employee.telegram_id:
+                try:
+                    await self.telegram.send_task_confirmation(employee, task)
+                    forwarded = True
+                except TelegramDeliveryError:
+                    forwarded = False
+        if chat_id and message_id:
+            suffix = "\n\n➡️ Отправлено исполнителю." if forwarded else "\n\n✅ Добавлено на доску."
+            await self.telegram.edit_message_text(chat_id, message_id, f"✅ Задача утверждена: {task.title}{suffix}")
+        await self.telegram.answer_callback_query(callback_id, "Утверждено")
+        return {"status": "approved", "task_id": task_id, "forwarded": forwarded}
+
+    async def _handle_manager_reject(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
+        task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
+        if not task:
+            await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
+            return {"status": "not_found"}
+        task.status = TaskStatus.REJECTED.value
+        task.rejected_at = datetime.utcnow()
+        self.db.commit()
+        if chat_id and message_id:
+            await self.telegram.edit_message_text(chat_id, message_id, f"❌ Задача отклонена менеджером: {task.title}")
+        await self.telegram.answer_callback_query(callback_id, "Отклонено")
+        return {"status": "rejected", "task_id": task_id}
 
     async def _handle_chat_member(self, payload: dict):
         return await self._sync_chat_membership(payload)

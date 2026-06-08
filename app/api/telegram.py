@@ -48,8 +48,8 @@ async def get_chat_messages(chat_id: int, limit: int = 100, db: Session = Depend
 
 @router.post("/chats/{chat_id}/analyze")
 async def analyze_chat(chat_id: int, db: Session = Depends(get_db)):
-    candidates = await TaskDecisionEngine(db).process_chat_context(chat_id)
-    return {"created_candidates": [serialize_candidate(candidate) for candidate in candidates]}
+    tasks = await TaskDecisionEngine(db).process_chat_context(chat_id)
+    return {"created_tasks": [{"id": str(task.id), "title": task.title, "status": task.status, "employee_id": str(task.employee_id) if task.employee_id else None, "department_id": str(task.department_id) if task.department_id else None} for task in tasks]}
 
 
 @router.get("/candidates")
