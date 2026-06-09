@@ -98,12 +98,12 @@ function AuthLayout({ children }: { children: ReactNode }) {
       <div className="relative mx-auto grid min-h-screen max-w-6xl items-center gap-10 px-4 py-10 lg:grid-cols-[1fr_430px]">
         <section className="max-w-2xl">
           <div className="mb-8 inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm text-stone-200 backdrop-blur">
-            <Bot className="h-4 w-4" /> Командус v2 SaaS · источник истины задач
+            <Bot className="h-4 w-4" /> Командус · источник истины задач
           </div>
           <h1 className="text-balance text-5xl font-semibold tracking-tight md:text-7xl">AI-помощник менеджера, который доводит задачи до результата.</h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-stone-300">Telegram, LLM, подтверждения исполнителей, YouGile-синхронизация, RBAC и аналитика в одном production-ready интерфейсе.</p>
+          <p className="mt-6 max-w-xl text-lg leading-8 text-stone-300">Telegram, LLM, подтверждения исполнителей, синхронизация с YouGile, ролевой доступ и аналитика в одном готовом к работе интерфейсе.</p>
           <div className="mt-10 grid gap-3 sm:grid-cols-3">
-            {['Multi-tenant', 'RBAC', 'Audit log'].map((item) => (
+            {['Мультиарендность', 'Ролевой доступ', 'Журнал аудита'].map((item) => (
               <div key={item} className="rounded-2xl border border-white/10 bg-white/10 p-4 text-sm font-medium text-stone-100 backdrop-blur">
                 <ShieldCheck className="mb-3 h-5 w-5 text-emerald-300" /> {item}
               </div>

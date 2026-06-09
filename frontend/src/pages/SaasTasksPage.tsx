@@ -18,6 +18,17 @@ const columns: Array<{ key: TaskStatusV2[]; title: string }> = [
   { key: ['REVIEW'], title: 'На проверке' },
   { key: ['DONE'], title: 'Завершено' },
 ];
+const statusLabel: Record<TaskStatusV2, string> = {
+  DETECTED: 'Обнаружена',
+  PENDING_CONFIRMATION: 'На подтверждении',
+  ACCEPTED: 'Принята',
+  REJECTED: 'Отклонена',
+  TO_DO: 'К выполнению',
+  IN_PROGRESS: 'В работе',
+  REVIEW: 'На проверке',
+  DONE: 'Завершена',
+  OVERDUE: 'Просрочена',
+};
 const next: Partial<Record<TaskStatusV2, TaskStatusV2>> = {
   DETECTED: 'IN_PROGRESS',
   PENDING_CONFIRMATION: 'IN_PROGRESS',
@@ -77,16 +88,16 @@ export function SaasTasksPage() {
     });
   };
 
-  return <><PageHeader eyebrow="Kanban Командуса" title="Задачи" description="Собственный Kanban: Командус остается источником истины, а YouGile — внешней синхронизируемой доской." />
+  return <><PageHeader eyebrow="Канбан Командуса" title="Задачи" description="Собственный канбан: Командус остаётся источником истины, а YouGile — внешней синхронизируемой доской." />
     <div className="mb-6 inline-flex rounded-2xl border border-stone-200 bg-white p-1">
       <TabButton active={view === 'calls'} onClick={() => setView('calls')}><PhoneCall className="h-4 w-4" />Созвоны AI</TabButton>
       <TabButton active={view === 'kanban'} onClick={() => setView('kanban')}><KanbanSquare className="h-4 w-4" />Канбан</TabButton>
     </div>
     {view === 'calls' && <CallsView />}
     {view === 'kanban' && <>
-    <section className="grid gap-4 xl:grid-cols-4">{columns.map((column) => <div key={column.title} className="rounded-3xl border border-stone-200 bg-white/70 p-3"><div className="mb-3 flex items-center justify-between px-2"><h2 className="font-semibold text-stone-950">{column.title}</h2><Badge tone="neutral">{tasks.filter((task) => column.key.includes(task.status)).length}</Badge></div><div className="space-y-3">{tasks.filter((task) => column.key.includes(task.status)).map((task) => <button key={task.id} onClick={() => setSelected(task)} className="block w-full rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"><div className="mb-3 flex items-start justify-between gap-3"><h3 className="font-semibold text-stone-950">{task.title}</h3><Badge tone={task.status === 'OVERDUE' ? 'red' : 'blue'}>{task.status}</Badge></div><p className="line-clamp-2 text-sm text-stone-500">{task.description || task.ai_summary || 'Описание появится после анализа AI.'}</p><div className="mt-4 space-y-2 text-xs text-stone-500"><p className="flex items-center gap-2"><UserRound className="h-3.5 w-3.5" />{employeeName(task.employee_id)}</p><p className="flex items-center gap-2"><MessageCircle className="h-3.5 w-3.5" />{chatTitle(task)}</p><p className="flex items-center gap-2"><CalendarClock className="h-3.5 w-3.5" />{task.due_at ? new Date(task.due_at).toLocaleString('ru-RU') : 'Без дедлайна'}</p></div>{next[task.status] && <Button className="mt-4 w-full" variant="secondary" onClick={(event) => { event.stopPropagation(); moveMutation.mutate({ id: task.id, status: next[task.status]! }); }}>Дальше</Button>}</button>)}</div></div>)}</section>{!tasks.length && <EmptyState title="Задач пока нет" text="Они появятся из Telegram AI или ручного создания API." />}
+    <section className="grid gap-4 xl:grid-cols-4">{columns.map((column) => <div key={column.title} className="rounded-3xl border border-stone-200 bg-white/70 p-3"><div className="mb-3 flex items-center justify-between px-2"><h2 className="font-semibold text-stone-950">{column.title}</h2><Badge tone="neutral">{tasks.filter((task) => column.key.includes(task.status)).length}</Badge></div><div className="space-y-3">{tasks.filter((task) => column.key.includes(task.status)).map((task) => <button key={task.id} onClick={() => setSelected(task)} className="block w-full rounded-2xl border border-stone-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"><div className="mb-3 flex items-start justify-between gap-3"><h3 className="font-semibold text-stone-950">{task.title}</h3><Badge tone={task.status === 'OVERDUE' ? 'red' : 'blue'}>{statusLabel[task.status]}</Badge></div><p className="line-clamp-2 text-sm text-stone-500">{task.description || task.ai_summary || 'Описание появится после анализа AI.'}</p><div className="mt-4 space-y-2 text-xs text-stone-500"><p className="flex items-center gap-2"><UserRound className="h-3.5 w-3.5" />{employeeName(task.employee_id)}</p><p className="flex items-center gap-2"><MessageCircle className="h-3.5 w-3.5" />{chatTitle(task)}</p><p className="flex items-center gap-2"><CalendarClock className="h-3.5 w-3.5" />{task.due_at ? new Date(task.due_at).toLocaleString('ru-RU') : 'Без дедлайна'}</p></div>{next[task.status] && <Button className="mt-4 w-full" variant="secondary" onClick={(event) => { event.stopPropagation(); moveMutation.mutate({ id: task.id, status: next[task.status]! }); }}>Дальше</Button>}</button>)}</div></div>)}</section>{!tasks.length && <EmptyState title="Задач пока нет" text="Они появятся из Telegram AI или ручного создания API." />}
     {selected && <div className="fixed inset-0 z-40 bg-stone-950/30" onClick={() => setSelected(null)}><aside className="ml-auto h-full w-full max-w-xl overflow-y-auto bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-      <div className="mb-5 flex items-start justify-between gap-4"><div><Badge tone="blue">{selected.status}</Badge><h2 className="mt-3 text-2xl font-semibold text-stone-950">{selected.title}</h2></div><div className="flex gap-2">{!editing && <Button variant="secondary" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" />Изменить</Button>}<Button variant="ghost" onClick={() => setSelected(null)}>Закрыть</Button></div></div>
+      <div className="mb-5 flex items-start justify-between gap-4"><div><Badge tone="blue">{statusLabel[selected.status]}</Badge><h2 className="mt-3 text-2xl font-semibold text-stone-950">{selected.title}</h2></div><div className="flex gap-2">{!editing && <Button variant="secondary" onClick={() => setEditing(true)}><Pencil className="h-4 w-4" />Изменить</Button>}<Button variant="ghost" onClick={() => setSelected(null)}>Закрыть</Button></div></div>
       {editing ? <div className="space-y-4">
         <Field label="Название"><input className={inputClass} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
         <Field label="Описание"><textarea className={inputClass} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>

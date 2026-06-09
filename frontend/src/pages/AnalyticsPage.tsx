@@ -18,17 +18,17 @@ export function AnalyticsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Company intelligence"
-        title="Аналитика v2"
-        description="Dashboard строится только по данным Командуса внутри текущей организации: статусы, acceptance/rejection, скорость реакции, завершения и burnup."
+        eyebrow="Аналитика компании"
+        title="Аналитика"
+        description="Сводка строится только по данным Командуса внутри текущей организации: статусы, принятие и отклонение, скорость реакции, завершения и накопление."
       />
 
-      {analyticsQuery.isLoading && <Loader text="Собираем dashboard..." />}
+      {analyticsQuery.isLoading && <Loader text="Собираем сводку..." />}
       {analyticsQuery.error && <ErrorState error={analyticsQuery.error} />}
       {data && (
         <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Metric icon={<BarChart3 />} label="Всего задач" value={data.total_tasks} note="source-of-truth" />
+            <Metric icon={<BarChart3 />} label="Всего задач" value={data.total_tasks} note="источник истины" />
             <Metric icon={<CheckCircle2 />} label="Завершено" value={data.completed} note={`${data.acceptance_percent}% принято`} />
             <Metric icon={<Clock />} label="Средняя реакция" value={`${data.average_response_time}ч`} note="до принятия" />
             <Metric icon={<TrendingUp />} label="Просрочено" value={data.overdue} note={`${data.rejection_percent}% отказов`} />
@@ -38,7 +38,7 @@ export function AnalyticsPage() {
             <Card>
               <div className="mb-5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3"><PieChart className="h-5 w-5 text-stone-500" /><h2 className="font-semibold text-stone-950">Распределение по статусам</h2></div>
-                <Badge tone="blue">Pie data</Badge>
+                <Badge tone="blue">Доли</Badge>
               </div>
               <div className="space-y-3">
                 {Object.entries(data.pie_statuses).map(([status, count]) => (
@@ -54,7 +54,7 @@ export function AnalyticsPage() {
             <Card>
               <div className="mb-5 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3"><UsersRound className="h-5 w-5 text-stone-500" /><h2 className="font-semibold text-stone-950">Топ сотрудников</h2></div>
-                <Badge tone="green">Bar chart</Badge>
+                <Badge tone="green">Рейтинг</Badge>
               </div>
               <div className="space-y-3">
                 {data.top_employees.map((item, index) => (
@@ -76,10 +76,10 @@ export function AnalyticsPage() {
             </Card>
 
             <Card>
-              <h2 className="mb-5 font-semibold text-stone-950">Burnup завершений</h2>
+              <h2 className="mb-5 font-semibold text-stone-950">Накопление завершений</h2>
               <div className="space-y-3">
                 {data.burnup.map((item) => <div key={item.date} className="flex items-center justify-between rounded-2xl bg-stone-50 px-4 py-3"><span className="text-sm text-stone-600">{item.date}</span><Badge tone="green">{item.completed_total}</Badge></div>)}
-                {data.burnup.length === 0 && <EmptyState title="Burnup пуст" text="График появится после первых DONE задач." />}
+                {data.burnup.length === 0 && <EmptyState title="Накопление пусто" text="График появится после первых завершённых задач." />}
               </div>
             </Card>
           </section>

@@ -16,7 +16,7 @@ export function DashboardPage() {
 
   return (
     <>
-      <PageHeader eyebrow="AI-руководитель" title="Dashboard" description="10-секундная операционная картина: задачи, риски, перегрузка, AI и интеграции без ручного обхода досок." />
+      <PageHeader eyebrow="AI-руководитель" title="Сводка" description="10-секундная операционная картина: задачи, риски, перегрузка, AI и интеграции без ручного обхода досок." />
       {query.isLoading && <Loader text="Собираем показатели компании..." />}
       {query.error && <ErrorState error={query.error} />}
       {data && (
@@ -26,13 +26,13 @@ export function DashboardPage() {
             <Metric label="В работе" value={data.in_work} icon={<Clock />} />
             <Metric label="Просрочено" value={data.overdue} icon={<AlertTriangle />} tone="red" />
             <Metric label="Завершено" value={data.completed} icon={<CheckCircle2 />} tone="green" />
-            <Metric label="AI Accuracy" value={`${data.ai_accuracy}%`} icon={<TrendingUp />} tone="blue" />
+            <Metric label="Точность AI" value={`${data.ai_accuracy}%`} icon={<TrendingUp />} tone="blue" />
             <Metric label="Среднее время" value={`${data.average_completion_time}ч`} icon={<LineChart />} />
           </section>
 
           <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <Card>
-              <div className="mb-5 flex items-center justify-between"><h2 className="font-semibold text-stone-950">Что требует внимания</h2><Badge tone={data.attention.length ? 'red' : 'green'}>{data.attention.length ? 'Action needed' : 'OK'}</Badge></div>
+              <div className="mb-5 flex items-center justify-between"><h2 className="font-semibold text-stone-950">Что требует внимания</h2><Badge tone={data.attention.length ? 'red' : 'green'}>{data.attention.length ? 'Требуется действие' : 'В норме'}</Badge></div>
               <div className="grid gap-3 md:grid-cols-2">
                 {(data.attention.length ? data.attention : [{ type: 'ok', title: 'Критических сигналов нет', count: 0 }]).map((item) => (
                   <div key={item.type} className="rounded-2xl border border-stone-200 bg-stone-50 p-4"><p className="text-sm text-stone-500">{item.title}</p><p className="mt-2 text-3xl font-semibold text-stone-950">{item.count}</p></div>
