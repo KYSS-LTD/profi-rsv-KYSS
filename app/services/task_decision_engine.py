@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from uuid import UUID
 
@@ -18,6 +19,8 @@ from app.telegram.callbacks import TelegramCallbackRouter
 from app.telegram.commands import TelegramCommandRouter
 from app.telegram.service import TelegramDeliveryError, TelegramService
 
+
+logger = logging.getLogger(__name__)
 
 
 def _name_match_strength(full_name: str | None, needle: str) -> int:
@@ -460,22 +463,25 @@ class TaskDecisionEngine:
             try:
                 await self.telegram.send_task_confirmation(employee, task)
                 return {"routed_to": "employee", "employee_id": str(employee.id)}
-            except TelegramDeliveryError:
-                pass
+            except TelegramDeliveryError as exc:
+                logger.warning("Task %s: DM to assignee %s failed, escalating to manager: %s", task.id, employee.id, exc)
         # 2) Low confidence or unresolved assignee → responsible manager for triage.
         manager = self._resolve_manager(organization_id, department_id, team_id, employee)
         if manager and manager.telegram_id:
             try:
                 await self.telegram.send_manager_task_confirmation(manager, task, employee_hint=employee.full_name if employee else None)
                 return {"routed_to": "manager", "manager_id": str(manager.id)}
-            except TelegramDeliveryError:
-                pass
+            except TelegramDeliveryError as exc:
+                logger.warning("Task %s: DM to manager %s failed, falling back to group %s: %s", task.id, manager.id, chat_id, exc)
+        else:
+            logger.warning("Task %s: no reachable manager (org=%s dept=%s team=%s); falling back to group %s", task.id, organization_id, department_id, team_id, chat_id)
         # 3) Fallback → the originating group, inside the correct topic.
         text, markup = self._task_card(task, employee)
         try:
             await self.telegram.send_group_message(chat_id, text, reply_markup=markup, message_thread_id=topic_id)
             return {"routed_to": "group", "chat_id": chat_id, "topic_id": topic_id}
-        except TelegramDeliveryError:
+        except TelegramDeliveryError as exc:
+            logger.error("Task %s: group delivery to %s failed: %s", task.id, chat_id, exc)
             return {"routed_to": "none", "task_id": str(task.id)}
 
     def _resolve_assignee(self, assignee_raw: str | None, organization_id, department_id, team_id) -> Employee | None:
@@ -492,11 +498,15 @@ class TaskDecisionEngine:
         return match_employee_by_name(raw, candidates, team_id=team_id, department_id=department_id)
 
     def _resolve_manager(self, organization_id, department_id, team_id, employee: Employee | None) -> Employee | None:
+        # Only ever return a manager the bot can actually DM: an unreachable
+        # manager (no telegram_id) would silently bounce the confirmation into
+        # the originating group. Mirrors the reachability filter already used by
+        # _reassignment_candidates.
         if employee and employee.manager_id:
             manager = self.db.query(Employee).filter(Employee.id == employee.manager_id, Employee.is_active.is_(True)).first()
-            if manager and normalize_role(manager.role) == Role.MANAGER:
+            if manager and manager.telegram_id and normalize_role(manager.role) == Role.MANAGER:
                 return manager
-        base = self.db.query(Employee).filter(Employee.organization_id == organization_id, Employee.is_active.is_(True), Employee.role == Role.MANAGER.value)
+        base = self.db.query(Employee).filter(Employee.organization_id == organization_id, Employee.is_active.is_(True), Employee.role == Role.MANAGER.value, Employee.telegram_id.isnot(None))
         if team_id:
             manager = base.filter(Employee.team_id == team_id).first()
             if manager:

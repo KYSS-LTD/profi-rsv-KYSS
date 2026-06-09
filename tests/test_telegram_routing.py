@@ -150,3 +150,53 @@ def test_dispatch_group_fallback_keeps_topic():
     result = _run(engine._dispatch_detected_task(_task(0.95), None, "org", "d", "t", -100, 34))
     assert result["routed_to"] == "group"
     assert fake.calls[0] == ("group", -100, 34)
+
+
+# --- _resolve_manager must only return reachable managers --------------------
+# Regression for the bug where a transcription confirmation landed in the group
+# chat: _resolve_manager handed STEP 2 a manager with no telegram_id, the DM was
+# skipped, and routing silently fell back to the originating group.
+
+class _FakeQuery:
+    def __init__(self, recorder, result):
+        self._recorder = recorder
+        self._result = result
+
+    def filter(self, *clauses):
+        self._recorder.append(clauses)
+        return self
+
+    def first(self):
+        return self._result
+
+
+class _FakeDB:
+    def __init__(self, results, recorder):
+        self._results = list(results)
+        self._recorder = recorder
+
+    def query(self, *models):
+        result = self._results.pop(0) if self._results else None
+        return _FakeQuery(self._recorder, result)
+
+
+def _resolve_engine(results):
+    engine = TaskDecisionEngine.__new__(TaskDecisionEngine)
+    recorder = []
+    engine.db = _FakeDB(results, recorder)
+    return engine, recorder
+
+
+def test_resolve_manager_base_query_requires_reachable_telegram():
+    engine, recorder = _resolve_engine([None])
+    engine._resolve_manager("org", None, None, None)
+    rendered = " ".join(str(clause) for clauses in recorder for clause in clauses)
+    assert "telegram_id IS NOT NULL" in rendered
+
+
+def test_resolve_manager_skips_direct_manager_without_telegram():
+    employee = SimpleNamespace(manager_id="mgr-1")
+    unreachable = SimpleNamespace(id="mgr-1", telegram_id=None, role="MANAGER")
+    # query 1: direct-manager lookup → unreachable; query 2: scoped/org search → none
+    engine, _ = _resolve_engine([unreachable, None])
+    assert engine._resolve_manager("org", None, None, employee) is None
