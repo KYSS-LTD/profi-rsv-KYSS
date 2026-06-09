@@ -17,6 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { ReactNode, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Badge } from '../../shared/ui/Badge';
 import { Button } from '../../shared/ui/Button';
 import { Card } from '../../shared/ui/Card';
@@ -406,8 +407,8 @@ function CallModal({
   const speakers = useMemo(() => Array.from(new Set(call.transcript.map((l) => l.speaker))), [call]);
   const speakerTone = (speaker: string) => SPEAKER_TONES[speakers.indexOf(speaker) % SPEAKER_TONES.length];
 
-  return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-stone-950/40 p-0 sm:items-center sm:p-6" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-stone-950/40 p-0 sm:items-center sm:p-6" onClick={onClose}>
       <div
         className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
@@ -509,7 +510,8 @@ function CallModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
