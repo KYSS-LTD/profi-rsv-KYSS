@@ -14,7 +14,7 @@ from app.telegram.service import TelegramDeliveryError, TelegramService
 
 
 class TelegramCommandRouter:
-    COMMANDS = {"/start", "/help", "/login", "/tasks", "/mytasks", "/today", "/week", "/status", "/stats", "/settings", "/ask"}
+    COMMANDS = {"/start", "/help", "/tasks", "/mytasks", "/today", "/week", "/status", "/stats", "/settings", "/ask"}
 
     def __init__(self, db: Session, telegram: TelegramService | None = None):
         self.db = db
@@ -34,8 +34,6 @@ class TelegramCommandRouter:
             return None
         if command == "/start":
             return await self._start(msg)
-        if command == "/login":
-            return await self._login(msg)
         if command == "/ask":
             return await self._ask(msg, args[0] if args else "")
         return await self._employee_command(msg, command)
@@ -54,7 +52,7 @@ class TelegramCommandRouter:
         normalized = f"@{username}"
         employee = self.db.query(Employee).filter(func.lower(Employee.telegram_username) == normalized.lower()).first()
         if not employee:
-            await self._send_message(chat_id, "Аккаунт сотрудника не найден. Попросите менеджера добавить ваш @username в Командус.")
+            await self._send_message(chat_id, "⛔ Нет доступа. Вашего @username нет в Командусе — обратитесь к администратору, чтобы вас добавили.")
             return {"status": "not_linked", "reason": "employee_not_found"}
         employee.telegram_id = sender.get("id")
         employee.telegram_first_name = sender.get("first_name")
@@ -74,20 +72,6 @@ class TelegramCommandRouter:
         await self.notifications.send_employee_magic_login(employee)
         await self._send_message(chat_id, "Главное меню:", reply_markup=self.main_menu_keyboard())
         return {"status": "linked", "employee_id": str(employee.id)}
-
-    async def _login(self, msg: dict):
-        chat = msg.get("chat") or {}
-        chat_id = chat.get("id")
-        if chat.get("type") != "private":
-            await self._send_message(chat_id, "Для безопасного входа выполните /login в личном чате с ботом.")
-            return {"status": "not_sent", "reason": "not_private_chat"}
-        sender = msg.get("from") or {}
-        employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
-        if not employee:
-            await self._send_message(chat_id, "Сначала подключите аккаунт командой /start.")
-            return {"status": "not_linked"}
-        await self.notifications.send_employee_magic_login(employee)
-        return {"status": "magic_login_sent", "employee_id": str(employee.id)}
 
     async def _ask(self, msg: dict, question: str):
         chat_id = (msg.get("chat") or {}).get("id")
@@ -111,7 +95,7 @@ class TelegramCommandRouter:
         sender = msg.get("from") or {}
         employee = self.db.query(Employee).filter(Employee.telegram_id == sender.get("id")).first()
         if command == "/help":
-            text = "Команды Командуса:\n/mytasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/week — дедлайны на 7 дней\n/status — статус задач и подключения\n/settings — настройки Telegram\n/login — ссылка активации/входа\n/ask <вопрос> — спросить AI или Rule Engine. Например: /ask что просрочено"
+            text = "Команды Командуса:\n/mytasks — все мои задачи\n/today — задачи и дедлайны на сегодня\n/week — дедлайны на 7 дней\n/status — статус задач и подключения\n/settings — настройки Telegram\n/ask <вопрос> — спросить AI или Rule Engine. Например: /ask что просрочено"
         elif not employee:
             text = "Сначала подключите аккаунт командой /start."
         else:
@@ -129,7 +113,7 @@ class TelegramCommandRouter:
                 week = [task for task in tasks if task.due_at and 0 <= (task.due_at.date() - today).days <= 7]
                 text = "На 7 дней:\n" + "\n".join(f"• {task.due_at.date().isoformat()} · {task.title} — {task.status}" for task in week[:10]) if week else "На ближайшие 7 дней дедлайнов нет."
             elif command == "/settings":
-                text = "Настройки Telegram: используйте /login для новой ссылки входа, /help для списка команд. Изменение профиля выполняется в Командусе."
+                text = "Настройки Telegram: /help — список команд. Изменение профиля выполняется в Командусе."
             else:
                 active = [task for task in tasks if task.status not in {TaskStatus.DONE.value, TaskStatus.REJECTED.value}]
                 text = "Ваши задачи:\n" + "\n".join(f"• {task.title} — {task.status}" for task in active[:10]) if active else "Активных задач нет."
@@ -137,7 +121,7 @@ class TelegramCommandRouter:
         return {"status": "command", "command": command}
 
     def main_menu_keyboard(self):
-        return {"inline_keyboard": [[{"text": "📋 Мои задачи", "callback_data": "menu:tasks"}, {"text": "⏰ Сегодня", "callback_data": "menu:today"}], [{"text": "📆 Неделя", "callback_data": "menu:week"}, {"text": "📈 Статус", "callback_data": "menu:status"}], [{"text": "⚙️ Настройки", "callback_data": "menu:settings"}, {"text": "❓ Помощь", "callback_data": "menu:help"}], [{"text": "🔗 Войти в Командус", "callback_data": "menu:login"}]]}
+        return {"inline_keyboard": [[{"text": "📋 Все мои задачи", "callback_data": "menu:tasks"}, {"text": "⏰ Задачи на сегодня", "callback_data": "menu:today"}], [{"text": "📆 Дедлайны на 7 дней", "callback_data": "menu:week"}, {"text": "📈 Сводка по задачам", "callback_data": "menu:status"}], [{"text": "⚙️ Настройки Telegram", "callback_data": "menu:settings"}, {"text": "❓ Помощь и команды", "callback_data": "menu:help"}]]}
 
     async def _send_message(self, chat_id: int | None, text: str, reply_markup: dict | None = None, message_thread_id: int | None = None):
         if chat_id is None:

@@ -40,9 +40,9 @@ class V2TaskService:
         return task
 
     def create_from_llm(self, *, organization_id, employee_id, title, description, source_chat_id, source_message_id, confidence, llm_model, extraction_version, department_id=None, team_id=None, organization_chat_id=None, source_excerpt=None, notify: bool = True):
-        # Product spec: confidence above 85% goes straight to the board; below that
-        # the task waits for explicit confirmation.
-        status = TaskStatus.ACCEPTED.value if confidence > 0.85 else TaskStatus.PENDING_CONFIRMATION.value
+        # Задача всегда ждёт явного подтверждения исполнителя: ACCEPTED ставится
+        # только по кнопке "Принять", не автоматически.
+        status = TaskStatus.PENDING_CONFIRMATION.value
         task = KomandusTask(organization_id=organization_id, employee_id=employee_id, department_id=department_id, team_id=team_id, organization_chat_id=organization_chat_id, title=title, description=description, source_chat_id=source_chat_id, source_message_id=source_message_id, llm_confidence=confidence, llm_model=llm_model, extraction_version=extraction_version, status=status, ai_summary=description, source_excerpt=source_excerpt or description)
         self.repo.save(task)
         if notify and confidence > 0.85:

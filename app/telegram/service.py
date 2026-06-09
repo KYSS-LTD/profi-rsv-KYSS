@@ -85,28 +85,31 @@ class TelegramService:
             raise TelegramDeliveryError("Bot is not a member of this chat or has no permission to post messages.")
         return await self.send_message(chat_id, text, reply_markup=reply_markup, message_thread_id=message_thread_id)
 
-    async def send_task_confirmation(self, employee: Employee, task: KomandusTask) -> dict[str, Any]:
+    async def send_task_confirmation(self, employee: Employee, task: KomandusTask, source_title: str | None = None) -> dict[str, Any]:
         if not employee.telegram_id:
             raise TelegramDeliveryError(f"Employee {employee.id} has no telegram_user_id. Ask them to send /start to the bot.")
+        source = source_title or (f"Telegram {task.source_chat_id}" if task.source_chat_id else "—")
+        deadline = task.due_at.strftime("%d.%m.%Y %H:%M") if task.due_at else "—"
         text = (
             "<b>Новая задача</b>\n\n"
             f"<b>Название:</b> {self._escape(task.title)}\n"
             f"<b>Описание:</b> {self._escape(task.description or '—')}\n"
-            f"<b>Источник:</b> Telegram {task.source_chat_id or '—'}\n"
-            f"<b>Дедлайн:</b> {task.due_at.isoformat() if task.due_at else '—'}"
+            f"<b>Источник:</b> {self._escape(source)}\n"
+            f"<b>Дедлайн:</b> {deadline}"
         )
         markup = {"inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"task_accept:{task.id}"}, {"text": "❌ Отказаться", "callback_data": f"task_reject:{task.id}"}], [{"text": "💬 Уточнить", "callback_data": f"task_clarify:{task.id}"}]]}
         return await self.send_html_message(employee.telegram_id, text, reply_markup=markup)
 
-    async def send_manager_task_confirmation(self, manager: Employee, task: KomandusTask, employee_hint: str | None = None) -> dict[str, Any]:
+    async def send_manager_task_confirmation(self, manager: Employee, task: KomandusTask, employee_hint: str | None = None, source_title: str | None = None) -> dict[str, Any]:
         if not manager.telegram_id:
             raise TelegramDeliveryError(f"Manager {manager.id} has no telegram_user_id. Ask them to send /start to the bot.")
+        source = source_title or (f"Telegram {task.source_chat_id}" if task.source_chat_id else "—")
         text = (
             "<b>Задача требует подтверждения</b>\n\n"
             f"<b>Название:</b> {self._escape(task.title)}\n"
             f"<b>Описание:</b> {self._escape(task.description or '—')}\n"
             f"<b>Предполагаемый исполнитель:</b> {self._escape(employee_hint or 'не определён')}\n"
-            f"<b>Источник:</b> Telegram {task.source_chat_id or '—'}\n"
+            f"<b>Источник:</b> {self._escape(source)}\n"
             f"<b>Уверенность AI:</b> {int((task.llm_confidence or 0) * 100)}%"
         )
         markup = {"inline_keyboard": [[{"text": "✅ Утвердить", "callback_data": f"mgr_approve:{task.id}"}, {"text": "❌ Отклонить", "callback_data": f"mgr_reject:{task.id}"}]]}
@@ -119,8 +122,8 @@ class TelegramService:
             logger.error("APP_PUBLIC_URL is missing or invalid; sending Telegram activation fallback without button for employee %s", employee.id)
             return await self.send_message(employee.telegram_id, "Ваш аккаунт создан.\n\nДля активации обратитесь к администратору.")
         first_name = employee.telegram_first_name or (employee.full_name.split()[0] if employee.full_name else "")
-        text = f"Здравствуйте, {first_name}.\n\nВаш аккаунт в Командус готов. Задайте пароль самостоятельно по защищённой ссылке активации."
-        markup = {"inline_keyboard": [[{"text": "🔗 Активировать Командус", "url": activation_url}]]}
+        text = f"Здравствуйте, {first_name}.\n\nВход в Командус — по кнопке ниже. Повторно входить не нужно."
+        markup = {"inline_keyboard": [[{"text": "🔗 Открыть Командус", "url": activation_url}]]}
         return await self.send_message(employee.telegram_id, text, reply_markup=markup)
 
     async def send_magic_login(self, employee: Employee, magic_url: str | None) -> dict[str, Any]:

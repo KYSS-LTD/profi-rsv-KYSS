@@ -34,8 +34,7 @@ export function MagicLoginPage({ mode = 'login' }: { mode?: 'login' | 'activate'
         <h1 className="text-2xl font-semibold">{mode === 'activate' ? 'Активация аккаунта' : 'Вход по Telegram-ссылке'}</h1>
         {!token && <p className="mt-4 text-sm text-red-700">В ссылке отсутствует token.</p>}
         {mutation.isPending && <div className="mt-6"><Loader text="Авторизуем вас..." /></div>}
-        {mutation.error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">Ссылка недействительна, истекла или уже использована. Вернитесь в Telegram и выполните /login или запросите новую ссылку у менеджера.</p>}
-        <Link className="mt-6 inline-block" to="/login"><Button variant="secondary">Обычный вход</Button></Link>
+        {mutation.error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">Ссылка недействительна, истекла или уже использована. Вернитесь в Telegram и выполните /start, чтобы получить новую ссылку.</p>}
       </Card>
     </main>
   );

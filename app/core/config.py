@@ -55,6 +55,7 @@ class Settings:
     TELEGRAM_BOT_USERNAME: str | None = os.getenv("TELEGRAM_BOT_USERNAME")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/2")
 
+    LLM_ENGINE_ENABLED: bool = _get_bool("LLM_ENGINE_ENABLED", False)
     LLM_PROCESSING_ENABLED: bool = _get_bool("LLM_PROCESSING_ENABLED", False)
     LLM_PROCESSING_PATH: str = os.getenv("LLM_PROCESSING_PATH", "LLMProcessing")
     TELEGRAM_CONTEXT_LIMIT: int = _get_int("TELEGRAM_CONTEXT_LIMIT", 80)

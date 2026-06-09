@@ -52,6 +52,7 @@ class TaskCandidate(Base):
     title: Mapped[str]
     assignee_raw: Mapped[str | None]
     deadline_raw: Mapped[str | None]
+    deadline: Mapped[str | None]
     confidence: Mapped[float]
     status: Mapped[str] = mapped_column(default="pending")
     action: Mapped[str] = mapped_column(default="create")

@@ -32,9 +32,15 @@ class LLMService:
     - deterministic heuristic extraction for local development and tests.
     """
 
-    async def extract_tasks(self, transcript: str, meeting_date: str | None = None) -> dict[str, Any]:
+    def __init__(self) -> None:
+        self._engine = None
+
+    async def extract_tasks(self, transcript: str, meeting_date: str | None = None, context: dict | None = None) -> dict[str, Any]:
         if not transcript.strip():
             return {"has_task": False, "tasks": []}
+
+        if settings.LLM_ENGINE_ENABLED:
+            return await self._run_llm_engine(transcript, context or {})
 
         if settings.LLM_PROCESSING_ENABLED:
             raw_tasks = self._run_llm_processing(transcript, meeting_date)
@@ -44,6 +50,58 @@ class LLMService:
         tasks = [self._normalize_task(item) for item in raw_tasks]
         tasks = [task for task in tasks if task["title"]]
         return {"has_task": bool(tasks), "tasks": tasks}
+
+    async def _run_llm_engine(self, transcript: str, ctx: dict) -> dict[str, Any]:
+        """Извлечение задач через llm_engine."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from llm_engine import LLMPipelineService
+        from llm_engine.schemas import ExtractionContext
+
+        lines = [line for line in transcript.splitlines() if line.strip()]
+        if not lines:
+            return {"has_task": False, "tasks": []}
+        sender, text = self._split_speaker(lines[-1])
+        context = ExtractionContext(
+            now=datetime.now(ZoneInfo("Europe/Moscow")),
+            sender=sender,
+            source_type="telegram_text",
+            chat_context=lines[:-1],
+            team_members=ctx.get("team_members", []),
+            open_tasks=ctx.get("open_tasks", []),
+        )
+        if self._engine is None:
+            self._engine = LLMPipelineService()
+        result = await self._engine.extract_tasks(text, context)
+        excerpt = f"{sender}: {text}" if sender else text
+        tasks = [self._map_engine_task(item, excerpt) for item in result.get("tasks", [])]
+        tasks = [task for task in tasks if task["title"]]
+        return {"has_task": bool(tasks), "tasks": tasks}
+
+    @staticmethod
+    def _split_speaker(line: str) -> tuple[str | None, str]:
+        sender, sep, text = line.partition(":")
+        if sep and sender.strip() and text.strip():
+            return sender.strip(), text.strip()
+        return None, line.strip()
+
+    def _map_engine_task(self, item: dict[str, Any], excerpt: str) -> dict[str, Any]:
+        relation = item.get("dedup_relation") or "none"
+        action = "update" if relation in {"duplicate", "update"} else "create"
+        return {
+            "title": str(item.get("title") or "").strip(),
+            "assignee_raw": item.get("assignee_raw"),
+            "deadline_raw": item.get("deadline_raw") or item.get("deadline"),
+            "deadline": item.get("deadline"),
+            "confidence": float(item.get("confidence") or 0.75),
+            "action": action,
+            "source_excerpt": excerpt,
+            "llm_block": "Новые",
+            "assignee_id": item.get("assignee_id"),
+            "dedup_relation": relation,
+            "existing_task_id": item.get("existing_task_id"),
+        }
 
     def _run_llm_processing(self, transcript: str, meeting_date: str | None) -> list[dict[str, Any]]:
         processing_dir = Path(settings.LLM_PROCESSING_PATH).resolve()

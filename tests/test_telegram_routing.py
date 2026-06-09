@@ -92,11 +92,11 @@ class _FakeTelegram:
     def __init__(self):
         self.calls = []
 
-    async def send_task_confirmation(self, employee, task):
+    async def send_task_confirmation(self, employee, task, source_title=None):
         self.calls.append(("employee", getattr(employee, "id", None)))
         return {}
 
-    async def send_manager_task_confirmation(self, manager, task, employee_hint=None):
+    async def send_manager_task_confirmation(self, manager, task, employee_hint=None, source_title=None):
         self.calls.append(("manager", getattr(manager, "id", None), employee_hint))
         return {}
 

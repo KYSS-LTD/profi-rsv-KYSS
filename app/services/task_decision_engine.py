@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
@@ -92,7 +93,7 @@ class TaskDecisionEngine:
             return []
 
         transcript = self._format_transcript(messages)
-        extraction = await llm_service.extract_tasks(transcript)
+        extraction = await llm_service.extract_tasks(transcript, context=self._build_llm_context(chat_id))
         last_message = messages[-1]
         if not extraction.get("has_task"):
             self._mark_chat_processed(chat_id, last_message.telegram_message_id)
@@ -124,6 +125,10 @@ class TaskDecisionEngine:
         if command_result:
             return command_result
 
+        custom_reject = await self._maybe_custom_reject(msg)
+        if custom_reject:
+            return custom_reject
+
         self._upsert_chat(chat)
         db_message = self._save_message(msg)
         topic_id = msg.get("message_thread_id")
@@ -152,7 +157,9 @@ class TaskDecisionEngine:
             return await self._handle_task_accept(callback_id, data.split(":", 1)[1], chat_id, msg_id)
         if data.startswith("task_reject:"):
             return await self._ask_reject_reason(callback_id, data.split(":", 1)[1], chat_id, msg_id)
-        if data.startswith("task_reject_reason:"):
+        if data.startswith("trrc:"):
+            return await self._ask_custom_reason(callback_id, data.split(":", 1)[1], chat_id, msg_id)
+        if data.startswith("trr:"):
             _, task_id, reason_code = data.split(":", 2)
             return await self._handle_task_reject(callback_id, task_id, reason_code, chat_id, msg_id)
         if data.startswith("task_clarify:"):
@@ -322,6 +329,12 @@ class TaskDecisionEngine:
             if not title:
                 continue
 
+            relation = task.get("dedup_relation") or "none"
+            existing_id = task.get("existing_task_id")
+            if relation in ("duplicate", "update") and existing_id:
+                self._apply_dedup(existing_id, relation, task)
+                continue
+
             duplicate = (
                 self.db.query(TaskCandidate)
                 .filter(
@@ -338,8 +351,9 @@ class TaskDecisionEngine:
                 message_id=message.id,
                 chat_id=message.chat_id,
                 title=title,
-                assignee_raw=task.get("assignee_raw"),
+                assignee_raw=self._engine_assignee_raw(task) or task.get("assignee_raw"),
                 deadline_raw=task.get("deadline_raw"),
+                deadline=task.get("deadline"),
                 confidence=task.get("confidence", 1.0),
                 status="pending",
                 action=task.get("action", "create"),
@@ -353,6 +367,65 @@ class TaskDecisionEngine:
         for candidate in candidates:
             self.db.refresh(candidate)
         return candidates
+
+    def _build_llm_context(self, chat_id: int) -> dict:
+        org_chat = self.db.query(OrganizationChat).filter(OrganizationChat.telegram_chat_id == chat_id).first()
+        if not org_chat:
+            return {}
+        org_id = org_chat.organization_id
+        employees = self.db.query(Employee).filter(Employee.organization_id == org_id, Employee.is_active.is_(True)).all()
+        open_tasks = self.db.query(KomandusTask).filter(KomandusTask.organization_id == org_id, KomandusTask.status.notin_(["DONE", "REJECTED", "CANCELLED"])).all()
+        return {
+            "team_members": [{"id": str(e.id), "display_name": e.full_name, "role": e.role} for e in employees],
+            "open_tasks": [
+                {"id": str(t.id), "title": t.title, "assignee_id": str(t.employee_id) if t.employee_id else None, "deadline": t.due_at.isoformat() if t.due_at else None, "status": t.status}
+                for t in open_tasks
+            ],
+        }
+
+    def _engine_assignee_raw(self, task: dict) -> str | None:
+        raw_id = task.get("assignee_id")
+        if not raw_id:
+            return None
+        try:
+            UUID(str(raw_id))
+        except (ValueError, TypeError):
+            return None
+        employee = self.db.query(Employee).filter(Employee.id == raw_id, Employee.is_active.is_(True)).first()
+        if not employee:
+            return None
+        if employee.telegram_username:
+            return "@" + employee.telegram_username.lstrip("@")
+        return employee.full_name
+
+    def _apply_dedup(self, existing_task_id: str, relation: str, task: dict) -> None:
+        due = self._parse_deadline(task.get("deadline"))
+        if relation != "update" or not due:
+            return
+        try:
+            existing = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(str(existing_task_id))).first()
+            if existing:
+                existing.due_at = due
+                self.db.commit()
+        except (ValueError, TypeError):
+            pass
+
+    def _parse_deadline(self, iso: str | None) -> datetime | None:
+        if not iso:
+            return None
+        try:
+            return datetime.fromisoformat(iso).astimezone(ZoneInfo("Europe/Moscow")).replace(tzinfo=None)
+        except (ValueError, TypeError):
+            return None
+
+    def _source_title(self, chat_id: int) -> str | None:
+        if self.db is None:
+            return None
+        org_chat = self.db.query(OrganizationChat).filter(OrganizationChat.telegram_chat_id == chat_id).first()
+        if org_chat and org_chat.title:
+            return org_chat.title
+        task_source = self.db.query(TaskSource).filter(TaskSource.telegram_chat_id == chat_id).first()
+        return task_source.title if task_source else None
 
     def _get_unprocessed_chat_messages(self, chat_id: int) -> list[Message]:
         db_chat = self.db.query(TelegramChat).filter(TelegramChat.telegram_chat_id == chat_id).first()
@@ -372,9 +445,20 @@ class TaskDecisionEngine:
     def _format_transcript(self, messages: list[Message]) -> str:
         lines = []
         for message in messages:
-            speaker = message.sender_name or message.username or str(message.telegram_user_id or "unknown")
+            speaker = self._speaker_name(message)
             lines.append(f"{speaker}: {message.text}")
         return "\n".join(lines)
+
+    def _speaker_name(self, message: Message) -> str:
+        employee = None
+        if message.telegram_user_id:
+            employee = self.db.query(Employee).filter(Employee.telegram_id == message.telegram_user_id, Employee.is_active.is_(True)).first()
+        if not employee and message.username:
+            uname = message.username.lstrip("@").lower()
+            employee = self.db.query(Employee).filter(func.lower(Employee.telegram_username).in_((uname, "@" + uname)), Employee.is_active.is_(True)).first()
+        if employee:
+            return employee.full_name
+        return message.sender_name or message.username or str(message.telegram_user_id or "unknown")
 
     def _extract_message_text(self, msg: dict) -> tuple[str, str]:
         if msg.get("text"):
@@ -450,6 +534,10 @@ class TaskDecisionEngine:
             source_excerpt=candidate.source_excerpt,
             notify=False,
         )
+        due = self._parse_deadline(candidate.deadline)
+        if due:
+            task.due_at = due
+            self.db.commit()
         # Reply inside the originating topic; fall back to the topic the source
         # was bound to so a group reply never lands in General by accident.
         effective_topic = topic_id or (task_source.telegram_topic_id if task_source else None)
@@ -458,10 +546,11 @@ class TaskDecisionEngine:
 
     async def _dispatch_detected_task(self, task: KomandusTask, employee: Employee | None, organization_id, department_id, team_id, chat_id: int, topic_id: int | None) -> dict:
         confidence = task.llm_confidence or 0.0
+        source_title = self._source_title(chat_id)
         # 1) Resolved assignee, high confidence, reachable → straight to their DM.
         if employee and employee.telegram_id and confidence > 0.85:
             try:
-                await self.telegram.send_task_confirmation(employee, task)
+                await self.telegram.send_task_confirmation(employee, task, source_title=source_title)
                 return {"routed_to": "employee", "employee_id": str(employee.id)}
             except TelegramDeliveryError as exc:
                 logger.warning("Task %s: DM to assignee %s failed, escalating to manager: %s", task.id, employee.id, exc)
@@ -469,7 +558,7 @@ class TaskDecisionEngine:
         manager = self._resolve_manager(organization_id, department_id, team_id, employee)
         if manager and manager.telegram_id:
             try:
-                await self.telegram.send_manager_task_confirmation(manager, task, employee_hint=employee.full_name if employee else None)
+                await self.telegram.send_manager_task_confirmation(manager, task, employee_hint=employee.full_name if employee else None, source_title=source_title)
                 return {"routed_to": "manager", "manager_id": str(manager.id)}
             except TelegramDeliveryError as exc:
                 logger.warning("Task %s: DM to manager %s failed, falling back to group %s: %s", task.id, manager.id, chat_id, exc)
@@ -551,17 +640,41 @@ class TaskDecisionEngine:
 
     async def _ask_reject_reason(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
         reasons = [("no_time", "Нет времени"), ("not_mine", "Не моя зона"), ("no_access", "Нет доступа"), ("need_details", "Нужны уточнения"), ("other", "Другое")]
-        markup = {"inline_keyboard": [[{"text": label, "callback_data": f"task_reject_reason:{task_id}:{code}"}] for code, label in reasons]}
+        rows = [[{"text": label, "callback_data": f"trr:{task_id}:{code}"}] for code, label in reasons]
+        rows.append([{"text": "✏️ Своя причина", "callback_data": f"trrc:{task_id}"}])
         if chat_id and message_id:
-            await self.telegram.edit_message_text(chat_id, message_id, "Выберите причину отказа:", reply_markup=markup)
+            await self.telegram.edit_message_text(chat_id, message_id, "Выберите причину отказа:", reply_markup={"inline_keyboard": rows})
         await self.telegram.answer_callback_query(callback_id, "Укажите причину отказа")
         return {"status": "reason_requested", "task_id": task_id}
 
-    async def _handle_task_reject(self, callback_id: str, task_id: str, reason_code: str, chat_id: int | None, message_id: int | None):
+    async def _ask_custom_reason(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
+        if chat_id:
+            await self.telegram.send_html_message(chat_id, f"✏️ Напишите свою причину отказа ответом на это сообщение.\n<code>rej:{task_id}</code>", reply_markup={"force_reply": True, "input_field_placeholder": "Причина отказа"})
+        await self.telegram.answer_callback_query(callback_id, "Напишите причину ответом на сообщение")
+        return {"status": "custom_reason_requested", "task_id": task_id}
+
+    async def _maybe_custom_reject(self, msg: dict):
+        reply_text = (msg.get("reply_to_message") or {}).get("text") or ""
+        if "rej:" not in reply_text:
+            return None
+        tail = reply_text.split("rej:")[-1].strip()
+        task_id = tail.split()[0] if tail else ""
+        try:
+            UUID(task_id)
+        except (ValueError, TypeError):
+            return None
+        reason = (msg.get("text") or "").strip()
+        if not reason:
+            return None
+        chat_id = (msg.get("chat") or {}).get("id")
+        return await self._handle_task_reject(None, task_id, None, chat_id, None, custom_reason=reason)
+
+    async def _handle_task_reject(self, callback_id: str | None, task_id: str, reason_code: str | None, chat_id: int | None, message_id: int | None, custom_reason: str | None = None):
         reason_labels = {"no_time": "Нет времени", "not_mine": "Не моя зона ответственности", "no_access": "Нет доступа", "need_details": "Нужны уточнения", "other": "Другое"}
         task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
         if not task:
-            await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
+            if callback_id:
+                await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
             return {"status": "not_found"}
         confirmation = self.db.query(TaskConfirmation).filter(TaskConfirmation.task_id == task.id).first()
         if not confirmation:
@@ -570,14 +683,18 @@ class TaskDecisionEngine:
         task.status = TaskStatus.REJECTED.value
         task.rejected_at = datetime.utcnow()
         confirmation.status = ConfirmationStatus.DECLINED.value
-        confirmation.decline_reason = reason_labels.get(reason_code, reason_code)
+        reason_text = (custom_reason or "").strip() or reason_labels.get(reason_code, reason_code)
+        confirmation.decline_reason = reason_text
         confirmation.responded_at = datetime.utcnow()
         self.db.commit()
         if chat_id and message_id:
-            await self.telegram.edit_message_text(chat_id, message_id, f"❌ Задача отклонена: {task.title}\nПричина: {confirmation.decline_reason}")
-        await self.telegram.answer_callback_query(callback_id, "Отказ сохранен. Передано менеджеру.")
-        await self._escalate_rejection_to_manager(task, confirmation.decline_reason)
-        return {"status": "rejected", "task_id": task_id, "reason": confirmation.decline_reason}
+            await self.telegram.edit_message_text(chat_id, message_id, f"❌ Задача отклонена: {task.title}\nПричина: {reason_text}")
+        elif chat_id:
+            await self._send_message(chat_id, f"❌ Задача отклонена: {task.title}\nПричина: {reason_text}")
+        if callback_id:
+            await self.telegram.answer_callback_query(callback_id, "Отказ сохранен. Передано менеджеру.")
+        await self._escalate_rejection_to_manager(task, reason_text)
+        return {"status": "rejected", "task_id": task_id, "reason": reason_text}
 
     async def _handle_manager_approve(self, callback_id: str, task_id: str, chat_id: int | None, message_id: int | None):
         task = self.db.query(KomandusTask).filter(KomandusTask.id == UUID(task_id)).first()
@@ -660,7 +777,7 @@ class TaskDecisionEngine:
         if not candidates:
             await self.telegram.answer_callback_query(callback_id, "Нет подключённых сотрудников для переназначения", show_alert=True)
             return {"status": "no_candidates", "task_id": task_id}
-        rows = [[{"text": employee.full_name, "callback_data": f"mgr_assign:{task.id}:{employee.id}"}] for employee in candidates]
+        rows = [[{"text": employee.full_name, "callback_data": f"mgr_assign:{task.id}:{employee.telegram_id}"}] for employee in candidates]
         if chat_id and message_id:
             await self.telegram.edit_message_text(chat_id, message_id, f"Кому переназначить задачу: {task.title}?", reply_markup={"inline_keyboard": rows})
         await self.telegram.answer_callback_query(callback_id, "Выберите исполнителя")
@@ -671,7 +788,7 @@ class TaskDecisionEngine:
         if not task:
             await self.telegram.answer_callback_query(callback_id, "Задача не найдена", show_alert=True)
             return {"status": "not_found"}
-        employee = self.db.query(Employee).filter(Employee.id == UUID(employee_id), Employee.organization_id == task.organization_id, Employee.is_active.is_(True)).first()
+        employee = self.db.query(Employee).filter(Employee.telegram_id == int(employee_id), Employee.organization_id == task.organization_id, Employee.is_active.is_(True)).first()
         if not employee:
             await self.telegram.answer_callback_query(callback_id, "Сотрудник не найден", show_alert=True)
             return {"status": "employee_not_found"}

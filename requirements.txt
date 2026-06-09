@@ -13,3 +13,9 @@ httpx
 cryptography
 email-validator
 structlog
+
+# llm_engine
+openai
+langgraph
+jinja2
+tzdata
