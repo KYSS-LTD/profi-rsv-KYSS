@@ -1,5 +1,7 @@
 import { env } from '../config/env';
 import { getAccessToken } from '../auth/token';
+import { resolveMock } from './mocks';
+import { MOCKS_ENABLED } from './mocks/enabled';
 
 type RequestOptions = RequestInit & {
   params?: Record<string, string | number | boolean | undefined | null>;
@@ -33,6 +35,13 @@ function resolveApiUrl(path: string) {
 }
 
 export async function apiClient<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  // Перехват демо-мокoв (см. ./mocks/enabled.ts — как отключить).
+  if (MOCKS_ENABLED) {
+    const method = (options.method ?? 'GET').toUpperCase();
+    const mocked = await resolveMock(method, path, options.body);
+    if (mocked.matched) return mocked.data as T;
+  }
+
   const url = resolveApiUrl(path);
 
   Object.entries(options.params ?? {}).forEach(([key, value]) => {
