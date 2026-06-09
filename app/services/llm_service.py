@@ -35,12 +35,12 @@ class LLMService:
     def __init__(self) -> None:
         self._engine = None
 
-    async def extract_tasks(self, transcript: str, meeting_date: str | None = None) -> dict[str, Any]:
+    async def extract_tasks(self, transcript: str, meeting_date: str | None = None, context: dict | None = None) -> dict[str, Any]:
         if not transcript.strip():
             return {"has_task": False, "tasks": []}
 
         if settings.LLM_ENGINE_ENABLED:
-            return await self._run_llm_engine(transcript)
+            return await self._run_llm_engine(transcript, context or {})
 
         if settings.LLM_PROCESSING_ENABLED:
             raw_tasks = self._run_llm_processing(transcript, meeting_date)
@@ -51,7 +51,7 @@ class LLMService:
         tasks = [task for task in tasks if task["title"]]
         return {"has_task": bool(tasks), "tasks": tasks}
 
-    async def _run_llm_engine(self, transcript: str) -> dict[str, Any]:
+    async def _run_llm_engine(self, transcript: str, ctx: dict) -> dict[str, Any]:
         """Извлечение задач через llm_engine."""
         from datetime import datetime
         from zoneinfo import ZoneInfo
@@ -69,8 +69,8 @@ class LLMService:
             sender=sender,
             source_type="telegram_text",
             chat_context=lines[:-1],
-            team_members=[],
-            open_tasks=[],
+            team_members=ctx.get("team_members", []),
+            open_tasks=ctx.get("open_tasks", []),
         )
         if self._engine is None:
             self._engine = LLMPipelineService()
@@ -102,6 +102,9 @@ class LLMService:
             "action": action,
             "source_excerpt": excerpt,
             "llm_block": None,
+            "assignee_id": item.get("assignee_id"),
+            "dedup_relation": relation,
+            "existing_task_id": item.get("existing_task_id"),
         }
 
     def _run_llm_processing(self, transcript: str, meeting_date: str | None) -> list[dict[str, Any]]:

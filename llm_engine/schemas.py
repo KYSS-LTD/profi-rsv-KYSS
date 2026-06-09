@@ -100,7 +100,7 @@ class OpenTask(BaseModel):
     id: str
     title: str
     assignee_id: str | None = None
-    deadline: datetime | None = None
+    deadline: str | None = None
     status: str | None = None
 
 

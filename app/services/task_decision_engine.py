@@ -36,7 +36,7 @@ class TaskDecisionEngine:
             return []
 
         transcript = self._format_transcript(messages)
-        extraction = await llm_service.extract_tasks(transcript)
+        extraction = await llm_service.extract_tasks(transcript, context=self._build_llm_context(source))
         last_message = messages[-1]
         if not extraction.get("has_task"):
             self._mark_chat_processed(chat_id, last_message.telegram_message_id)
@@ -254,10 +254,14 @@ class TaskDecisionEngine:
             title = task.get("title")
             if not title:
                 continue
+            relation = task.get("dedup_relation") or "none"
+            existing_id = task.get("existing_task_id")
+            if relation in ("duplicate", "update") and existing_id:
+                self._attach_duplicate(source, message, task, int(existing_id))
+                continue
             duplicate = self.db.query(TaskCandidate).filter(TaskCandidate.chat_id == message.chat_id, TaskCandidate.title == title, TaskCandidate.status.in_(("PENDING", "ACCEPTED", "pending", "approved", "confirmed"))).first()
             if duplicate:
                 continue
-            assignee = self._find_assignee(source.organization_id, task.get("assignee_raw"))
             candidate = TaskCandidate(
                 organization_id=source.organization_id,
                 message_id=message.id,
@@ -265,7 +269,7 @@ class TaskDecisionEngine:
                 title=title,
                 description=task.get("description") or task.get("source_excerpt"),
                 assignee_raw=task.get("assignee_raw"),
-                assignee_id=assignee.id if assignee else None,
+                assignee_id=self._resolve_assignee_id(source, task),
                 deadline_raw=task.get("deadline_raw"),
                 deadline=task.get("deadline_raw"),
                 confidence=self._confidence_percent(task.get("confidence", 100.0)),
@@ -282,6 +286,45 @@ class TaskDecisionEngine:
         for candidate in candidates:
             self.db.refresh(candidate)
         return candidates
+
+    def _build_llm_context(self, source: TelegramSource) -> dict:
+        employees = self.db.query(Employee).filter(Employee.organization_id == source.organization_id, Employee.is_active.is_(True)).all()
+        open_tasks = self.db.query(Task).filter(Task.organization_id == source.organization_id, Task.status.in_(("OPEN", "IN_PROGRESS"))).all()
+        return {
+            "team_members": [{"id": str(e.id), "display_name": e.full_name, "role": e.role} for e in employees],
+            "open_tasks": [
+                {"id": str(t.id), "title": t.title, "assignee_id": str(t.assignee_employee_id) if t.assignee_employee_id else None, "deadline": t.deadline, "status": t.status}
+                for t in open_tasks
+            ],
+        }
+
+    def _resolve_assignee_id(self, source: TelegramSource, task: dict) -> int | None:
+        raw_id = task.get("assignee_id")
+        if raw_id:
+            return int(raw_id)
+        assignee = self._find_assignee(source.organization_id, task.get("assignee_raw"))
+        return assignee.id if assignee else None
+
+    def _attach_duplicate(self, source: TelegramSource, message: Message, task: dict, existing_task_id: int) -> None:
+        candidate = TaskCandidate(
+            organization_id=source.organization_id,
+            message_id=message.id,
+            chat_id=message.chat_id,
+            title=task["title"],
+            description=task.get("description") or task.get("source_excerpt"),
+            assignee_raw=task.get("assignee_raw"),
+            assignee_id=self._resolve_assignee_id(source, task),
+            deadline_raw=task.get("deadline_raw"),
+            deadline=task.get("deadline_raw"),
+            confidence=self._confidence_percent(task.get("confidence", 1.0)),
+            status="DUPLICATE",
+            action=task.get("dedup_relation"),
+            source_message_id=message.telegram_message_id,
+            source_chat_id=message.chat_id,
+            source_excerpt=task.get("source_excerpt"),
+            llm_block=f"duplicate_of:{existing_task_id}",
+        )
+        self.db.add(candidate)
 
     async def _route_candidate_confirmation(self, candidate: TaskCandidate):
         assignee = self.db.query(Employee).filter(Employee.id == candidate.assignee_id).first() if candidate.assignee_id else None
