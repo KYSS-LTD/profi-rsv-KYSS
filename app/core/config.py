@@ -60,6 +60,7 @@ class Settings:
 
     LLM_PROCESSING_ENABLED: bool = _get_bool("LLM_PROCESSING_ENABLED", False)
     LLM_PROCESSING_PATH: str = os.getenv("LLM_PROCESSING_PATH", "LLMProcessing")
+    LLM_ENGINE_ENABLED: bool = _get_bool("LLM_ENGINE_ENABLED", False)
     TELEGRAM_CONTEXT_LIMIT: int = _get_int("TELEGRAM_CONTEXT_LIMIT", 80)
     AUTO_CREATE_TABLES: bool = _get_bool("AUTO_CREATE_TABLES", True)
 

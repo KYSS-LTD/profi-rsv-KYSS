@@ -8,6 +8,12 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173}
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      LLM_ENGINE_ENABLED: ${LLM_ENGINE_ENABLED:-false}
+      LLM_PROVIDER: ${LLM_PROVIDER:-api}
+      LLM_MODEL: ${LLM_MODEL:-deepseek/deepseek-v4-flash}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
     ports:
       - "8000:8000"
     depends_on:
@@ -26,6 +32,12 @@ services:
       POSTGRES_PORT: 5432
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      BOT_TOKEN: ${BOT_TOKEN:-}
+      LLM_ENGINE_ENABLED: ${LLM_ENGINE_ENABLED:-false}
+      LLM_PROVIDER: ${LLM_PROVIDER:-api}
+      LLM_MODEL: ${LLM_MODEL:-deepseek/deepseek-v4-flash}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
     depends_on:
       db:
         condition: service_healthy

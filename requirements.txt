@@ -9,3 +9,9 @@ python-dotenv
 redis
 celery
 httpx
+
+# llm_engine
+openai
+langgraph
+jinja2
+tzdata
