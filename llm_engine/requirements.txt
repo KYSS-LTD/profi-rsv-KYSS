@@ -1,0 +1,6 @@
+openai
+httpx
+jinja2
+langgraph
+pydantic
+tzdata

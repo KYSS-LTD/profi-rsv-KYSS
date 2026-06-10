@@ -1,0 +1,21 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+alembic
+pydantic
+pydantic-settings
+python-dotenv
+redis
+celery
+httpx
+
+cryptography
+email-validator
+structlog
+
+# llm_engine
+openai
+langgraph
+jinja2
+tzdata
